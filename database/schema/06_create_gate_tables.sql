@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS gate.gate_appointments (
     appointment_status VARCHAR(30) DEFAULT 'PENDING'
 );
 
--- Digital paperwork and cargo declarations submitted via web/mobile interface
+-- Digital submissions and cargo declarations submitted via web/mobile interface
 CREATE TABLE IF NOT EXISTS gate.gate_submissions (
     submission_id BIGSERIAL PRIMARY KEY,
     appointment_id BIGINT NOT NULL REFERENCES gate.gate_appointments(appointment_id),

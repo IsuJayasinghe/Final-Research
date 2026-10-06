@@ -1,14 +1,14 @@
 # AI-Powered Autonomous Smart Port Management System
 
-An undergraduate group research project dedicated to the design, optimization, and automation of intelligent maritime container terminal operations through machine learning, operational research, and decision-support algorithms.
+An undergraduate group research project dedicated to the design, optimization, and synchronization of intelligent maritime container terminal operations through machine learning, mathematical optimization, and decision-support algorithms.
 
 ---
 
 ## 📌 Project Overview
 
-Modern container ports face escalating congestion, scheduling conflicts, and operational bottlenecks across quayside, internal transport, yard storage, and landside gate interfaces. This research project introduces an integrated, multi-agent AI-driven port management framework designed to streamline and synchronize container handling across the terminal lifecycle.
+Modern container terminals operate under high throughput demands where quayside scheduling conflicts, yard congestion, internal fleet travel delays, and landside gate bottlenecks directly compound operational costs. This research project introduces an integrated, multi-agent AI-driven port management system that synchronizes container handling across the terminal lifecycle.
 
-The project models the container terminal ecosystem across **four core research components**, executed in coordinated tandem:
+The system coordinates container terminal operations across **four core research components**:
 
 ```
 [Quayside Operations]          [Internal Transport]          [Container Storage]          [Landside Gate]
@@ -17,54 +17,126 @@ Component 1: Berth Allocation ──> Component 2: Drayage Truck ──> Compone
 
 ---
 
-## 🏛️ System Architecture & Research Components
+## 🏛️ System Architecture & Cross-Component Integration
 
-The system is organized into four interconnected research components. Component numbering and definitions are strictly maintained as follows:
+The system employs an integrated architecture connecting terminal telemetry, optimization services, and operational interfaces:
 
-### 1. Smart Dynamic Berth Allocation System (Component 1)
+```
+                  Operational Telemetry & External Booking Data
+                                        │
+                                        ▼
+                       Shared Backend Services & PostgreSQL
+                                        │
+    ┌───────────────────────────────────┴───────────────────────────────────┐
+    │                                                                       │
+    ▼                                                                       ▼
+Component 1: Berth Allocation                       Component 3: Yard Storage
+  │ (quayside schedules & berthing windows)           │ (block destinations & pickup slots)
+  │                                                   │
+  └───────────────────────────────┬───────────────────┘
+                                  │
+                                  ▼
+                    Component 2: Drayage Truck
+                      │ (movement updates & completion feedback)
+                      │
+                      ▼
+                    Component 4: Gate System
+                      (pre-arrival appointments & landside processing)
+                                        │
+                                        ▼
+                           Web & Mobile User Interfaces
+```
+
+### Operational Coordination Across Components
+- **Component 1 to Component 2**: Component 1 provides quayside vessel berthing schedules, vessel turnaround windows, and quay crane availability to Component 2 for coordinating quayside container discharge and loading transfers.
+- **Component 3 to Component 2**: Component 3 provides designated yard block storage zones, bay/row coordinates, and retrieval schedules to Component 2 for transport route planning and truck-task dispatch.
+- **Component 2 to Components 1 & 3**: Component 2 provides real-time truck location updates, task completion signals, and equipment status feedback to Component 1 (quay crane transfer progress) and Component 3 (yard intake/discharge timing).
+- **Component 4 Integration**: Component 4 coordinates landside intake and dispatch appointments, validating incoming containers and managing gate throughput to align with yard and terminal capacity.
+
+---
+
+## 🔬 Research Components
+
+The system is organized into four interconnected research components. Component numbering and definitions are maintained as follows:
+
+### Component 1: Smart Dynamic Berth Allocation System
 Focuses on quayside vessel scheduling and resource allocation:
 - **Vessel ETA Prediction**: Predicts accurate vessel Estimated Time of Arrival (ETA) using maritime telemetry (AIS data: SOG, COG, draft, latitude, longitude) and hydro-meteorological indicators (wind speed, wave height).
-- **Dynamic Berth Allocation**: Formulates optimal berthing schedules considering berth physical limits (draft, length, bollard spacing), crane handling capacities, and expected operational turnaround times to minimize demurrage and waiting times.
+- **Vessel Delay Prediction**: Identifies arrival delays caused by maritime weather disruptions, sea states, and speed variations.
+- **Berth Availability Analysis**: Evaluates quayside physical limits (berth lengths, draft thresholds, bollard layouts) against incoming vessel specifications.
+- **Vessel Requirement Analysis**: Matches vessel dimensional, cargo, and handling constraints with quayside resources.
+- **Dynamic Berth Assignment**: Formulates berthing schedules that optimize quayside resource utilization.
+- **Berth Scheduling Optimization**: Optimizes quay crane allocation and handling schedules to minimize vessel turnaround time and demurrage costs.
+- **Dynamic Rescheduling & Reallocation**: Reassesses and adjusts berthing schedules when vessel arrival times drift, handling delays occur, or adverse operational conditions develop.
+- **Environmental Condition Handling**: Incorporates wind speed and wave height factors into quayside scheduling decisions.
 
-### 2. Intelligent Drayage Truck Optimization System (Component 2)
-Focuses on internal horizontal transport and vehicle fleet coordination:
-- **Human-Driven Internal Terminal Truck Operations**: Coordinates human-operated terminal tractors and trucks transporting containers between the berth, container yard, and gate.
-- **Truck and Task Allocation**: Optimizes assignment of dispatch orders to active trucks to reduce deadhead (empty travel distance) and minimize idle waiting periods.
-- **Route Decision Support**: Provides real-time path planning and dispatching guidance based on terminal zone congestion and route distances.
-- **Operational-State-Aware Adaptive Reassessment**: Dynamically recalculates task assignments and priorities when delays, crane holds, or unexpected terminal events occur.
-- **Driver Mobile Application Support**: Delivers dispatch assignments, turn-by-turn guidance, and status feedback to internal truck drivers via a dedicated mobile interface.
+### Component 2: Intelligent Drayage Truck Optimization System
+Focuses on internal horizontal transport and vehicle fleet coordination for **human-driven internal terminal trucks**:
+- **Fleet Scope**: The internal truck fleet consists of human-driven prime movers and terminal tractors. Intelligent algorithms provide dispatch and routing decision support rather than autonomous vehicle driving.
+- **Operational Information Utilized**:
+  - Real-time truck locations and driver availability status.
+  - Current truck workload and existing assignment queues.
+  - Container-transfer tasks between quayside berths, container yards, and terminal gates.
+  - Pickup and destination zone requirements.
+  - Task priority levels and time windows.
+  - Route distances and terminal zone traffic conditions.
+  - Changing congestion patterns across terminal roadways.
+- **Intelligent Decision Functionality**:
+  - **Suitable Truck-Task Allocation**: Assigns container transfer orders to active trucks to balance workloads and maximize fleet efficiency.
+  - **Route Decision Support**: Provides real-time path guidance across terminal roadways based on zone distances and congestion levels.
+  - **Adaptive Reassessment**: Recalculates assignments and schedules dynamically when delays, crane holds, or unexpected terminal events occur.
+  - **Fleet Utilization**: Improves truck utilization, minimizes idle waiting times, and reduces unnecessary empty travel (deadhead distance).
+  - **Efficient Container Transfers**: Accelerates cycle times for transfers between quayside, yard blocks, and gates.
+- **Operational Decision Cycle**:
+  ```
+  Operational Data ──> State Update ──> Feasibility Check ──> Truck-Task Suitability Evaluation
+          │
+          └──> Task Assignment ──> Route Selection ──> Driver Execution ──> Status Update ──> Reassessment
+  ```
+- **Driver Mobile Application**: Delivers real-time task assignments, GPS location updates, route guidance, truck/job status updates, job completion feedback, and operational notifications directly to internal truck drivers.
+- **Research Contribution**: The core intelligent contribution is adaptive truck-task and route decision support; GPS, mobile interfaces, APIs, and databases serve as enabling infrastructure.
 
-### 3. Smart Container Yard Allocation & Space Utilization Optimization System (Component 3)
-Focuses on container yard space allocation and stacking efficiency:
-- **Container Yard Allocation**: Assigns optimal storage blocks, bays, rows, and tiers to incoming and outgoing containers according to container attributes (size, weight class, type, shipping line, hazard class).
-- **Yard Occupancy Prediction**: Forecasts yard block occupancy levels and utilization patterns over operational horizons.
-- **Storage-Zone & Space-Utilization Optimization**: Minimizes container re-handling ("unproductive reshuffling") and balances crane workload across yard blocks.
+### Component 3: Smart Container Yard Allocation & Space Utilization Optimization System
+Focuses on container yard space allocation, stacking efficiency, and occupancy forecasting:
+- **Container Yard Allocation**: Assigns optimal storage blocks, bays, rows, and tiers to incoming and outgoing containers according to container attributes (size, weight class, type, shipping line, cargo class).
+- **Dwell-Time-Related Analysis & Prediction**: Forecasts container dwell duration to optimize stacking sequences according to anticipated departure dates.
+- **Yard Occupancy Prediction**: Forecasts storage block occupancy levels and utilization patterns over operational horizons.
+- **Suitable Storage-Zone Selection**: Selects storage blocks that balance crane workloads and minimize congestion at yard transfer points.
+- **Yard Space Utilization Optimization**: Maximizes storage capacity and spatial density across yard blocks.
+- **Reshuffling Reduction**: Minimizes unproductive container moves (re-handling) during retrieval cycles.
+- **Storage Requirement Compliance**: Enforces constraints regarding container dimensions, weight-stacking safety rules, hazardous material zoning, and shipping line groupings.
 
-### 4. AI-Powered Gate Appointment System (Component 4)
-Focuses on landside terminal access control, external drayage scheduling, and intake processing:
-- **Digital Data Submission Interfaces**: Enables external freight hauliers, logistics operators, and shipping agents to submit container intake/dispatch data electronically through desktop web and mobile interfaces.
-- **Automated Validation**: Verifies cargo declarations, container identifiers, vehicle registrations, and driver clearance prior to terminal arrival.
-- **Clearance & Appointment Decision Support**: Analyzes incoming gate appointment requests against projected yard and berth workloads to smooth peak arrival surges and assign clearance slots.
-- **Gate Processing & Access Control**: Optimizes physical gate lane assignments and accelerates gate turnaround times.
-
-> [!IMPORTANT]
-> **Data Governance Notice for Component 4**:
-> Component 4 is **not** primarily designed as a paper-document OCR or physical paper-scanning solution. It is built as a digital pre-clearance and appointment orchestration system. Historical digital operational data for Component 4 are currently unavailable because previous terminal gate operations were conducted manually on paper and had not been digitized at the time of research data acquisition. In accordance with academic research integrity standards, no artificial or fake historical operational datasets are fabricated for Component 4.
+### Component 4: AI-Powered Gate Appointment System
+Focuses on landside terminal access control, digital appointment booking, and intake/dispatch processing:
+- **Digital System Workflow**:
+  ```
+  Digital Desktop/Mobile Data Entry ──> Validation ──> Gate Appointment / Clearance Decision Support
+          │
+          └──> Suitable Gate & Arrival-Time Assignment ──> Gate Processing
+  ```
+- **Digital Information Submission**: Enables hauliers, logistics operators, and shipping agents to submit truck, container, cargo, vehicle, and gate-related information through structured digital forms via desktop web and mobile interfaces.
+- **Appointment Request Processing**: Receives and processes appointment booking requests for external container drop-offs and pickups.
+- **Information Validation**: Validates submitted cargo declarations, container identifiers (ISO 6346), vehicle registrations, and driver details before terminal arrival.
+- **Gate Clearance Decision Support**: Evaluates appointment requests against terminal capacity to provide decision support for gate clearance and entry approvals.
+- **Gate Congestion Prediction**: Forecasts arrival volumes and gate lane utilization to prevent queue buildup.
+- **Suitable Gate & Arrival-Time Assignment**: Allocates specific gate lanes and designated arrival time-windows to balance intake flow throughout the day.
+- **Appointment Status Management**: Tracks reservation states from initial submission through arrival, verification, and completion.
+- **Dynamic Appointment Reassignment**: Updates appointment allocations or reassigns time slots when terminal congestion or operational conditions shift.
+- **Gate Processing Support**: Coordinates external truck entry with yard receiving schedules to streamline turnaround times.
 
 ---
 
 ## 💻 Technology Stack
 
-| Tier | Technologies | Purpose |
+| Domain | Technologies | Purpose |
 |---|---|---|
-| **Frontend Web** | React, TypeScript, Tailwind CSS, Vite | Web-based operations dashboard, management portal, and gate booking interface |
-| **Driver Mobile App** | Flutter / React Native | Mobile application for internal terminal truck drivers (task receipt, GPS updates, status logs) |
-| **Backend Services** | Python 3.11+, FastAPI, Pydantic, SQLAlchemy | High-performance asynchronous RESTful APIs and scheduling services |
-| **Database** | PostgreSQL (PostgreSQL 18 local development) | Multi-schema relational database storing operational, tracking, and transactional entities |
-| **ML & Decision Models** | Python, Scikit-learn, XGBoost / LightGBM, SciPy / PuLP | Predictive models (ETA prediction, yard occupancy) and optimization algorithms |
-| **Version Control** | Git, GitHub | Distributed version control and collaborative group workflow |
-
-*Note: Initial development is configured for local PostgreSQL 18. Cloud containerization (Docker) and deployment pipelines can be integrated in later phases.*
+| **Frontend Web** | React, TypeScript | Operations dashboard, administrative portals, and gate booking interfaces |
+| **Driver Mobile Application** | Mobile Application | Task receipt, GPS updates, route guidance, and job status feedback for internal truck drivers |
+| **Backend Services** | Python, FastAPI | High-performance asynchronous RESTful APIs, optimization engines, and service coordination |
+| **Database** | PostgreSQL (PostgreSQL 18 local development) | Multi-schema relational database storing operational entities, tracking, and logs |
+| **AI / Machine Learning / Optimization** | XGBoost, Scikit-learn, Google OR-Tools, LSTM, Prophet, ARIMA | Predictive models (vessel ETA prediction, yard occupancy forecasting, dwell-time analysis) and combinatorial optimization |
+| **Data Processing & Analytics** | Pandas, NumPy, Matplotlib, Seaborn | Data manipulation, feature preparation, and analytics visualization |
+| **Version Control** | Git, GitHub | Distributed version control and collaborative group development |
 
 ---
 
@@ -100,7 +172,7 @@ smart-port-management-system/
 
 ## 🌿 Git Branching & Collaboration Strategy
 
-This project follows an integrated GitFlow-inspired branching strategy designed for coordinated group research development:
+The repository follows an integrated GitFlow-inspired branching strategy designed for coordinated group research development:
 
 ```
 [main] ─────────────────────────────────────────────────────────────> (Stable Production / Release)
@@ -114,7 +186,7 @@ This project follows an integrated GitFlow-inspired branching strategy designed 
 ```
 
 ### Branch Definitions
-- **`main`**: The primary stable branch representing thoroughly verified, end-to-end integrated versions of the system. Direct commits to `main` are restricted.
+- **`main`**: The primary stable branch representing verified, end-to-end integrated versions of the system. Direct commits to `main` are restricted.
 - **`develop`**: The active shared integration branch. All component teams continuously integrate and verify completed features here.
 - **`feature/c1-berth`**: Dedicated branch for Component 1 (Berth Allocation System).
 - **`feature/c2-drayage`**: Dedicated branch for Component 2 (Drayage Truck Optimization).
@@ -122,30 +194,30 @@ This project follows an integrated GitFlow-inspired branching strategy designed 
 - **`feature/c4-gate`**: Dedicated branch for Component 4 (Gate Appointment System).
 
 ### Collaboration Guidelines
-1. **Regular Integration**: Team members must regularly pull the latest changes from `develop` into their feature branches and submit Pull Requests back into `develop`. **Do not build four completely isolated silos and attempt a monolithic merge at the end of the project.**
+1. **Regular Integration**: Team members develop on their respective feature branches and regularly pull from and merge into `develop`. Independent silos merged only at the end of the project are strictly avoided.
 2. **Schema Uniformity**: Database schemas are centralized under `database/schema/` across all components to ensure relational integrity.
-3. **Commit Messages**: Write meaningful, conventional commits (`feat:`, `fix:`, `docs:`, `chore:`, `db:`).
+3. **Conventional Commits**: Commit messages follow standard conventions (`feat:`, `fix:`, `docs:`, `chore:`, `db:`).
 
 ---
 
-## 🗄️ Database Quick Reference
+## 🗄️ Database Architecture Quick Reference
 
 The local PostgreSQL database is named `smart_port_management`. It organizes port data across six logical schemas:
 - `common`: Shared entities (vessels, containers, transport routes).
 - `berth`: Quayside berths, AIS vessel telemetry, ETA predictions, berth allocations.
 - `drayage`: Internal trucks, drivers, dispatch tasks, GPS traces, assignment logs.
-- `yard`: Yard zones/blocks, container allocations, occupancy metrics.
+- `yard`: Yard zones, container allocations, occupancy metrics.
 - `gate`: Gates, external truck appointments, digital submissions, clearance logs.
 - `staging`: Raw imported research datasets used for ETL and preprocessing.
 
-See [`database/README.md`](file:///D:/AI_port_management/database/README.md) for full setup instructions and schema details.
+See [database/README.md](database/README.md) for full setup instructions, table definitions, and execution order.
 
 ---
 
-## 🛡️ Data Governance & Confidentiality
+## 🛡️ Data Governance & Repository Security
 
-- **Confidentiality**: Raw operational and research datasets (`*.csv`, `*.xlsx`, `*.xls`) must **never** be committed to public GitHub repositories.
-- **Staging Isolation**: Data imported into PostgreSQL staging tables is transformed and sanitized via ETL pipelines before entering core operational schemas.
-- **No Secrets**: Never commit `.env` files, API keys, or database credentials.
+- **Confidentiality**: Raw operational and research datasets (`*.csv`, `*.xlsx`, `*.xls`) must never be committed to public GitHub repositories.
+- **Staging Isolation**: Data imported into PostgreSQL staging tables is transformed and sanitized via local ETL pipelines before entering core operational schemas.
+- **Secrets Protection**: Credentials, database passwords, and API keys must never be committed; environment configuration is managed via `.env.example`.
 
-Refer to [`docs/data-management.md`](file:///D:/AI_port_management/docs/data-management.md) for data management protocols.
+Refer to [docs/data-management.md](docs/data-management.md) for data management protocols.

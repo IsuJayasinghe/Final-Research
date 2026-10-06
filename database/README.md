@@ -64,7 +64,7 @@ Monitors yard storage zones, container spatial placement, and storage block occu
 Facilitates external haulier gate access, pre-clearance validation, and appointment scheduling:
 - **`gate.gates`**: Physical terminal entrance/exit gate lanes and checkpoints (`gate_id`, `gate_name`, `gate_status`).
 - **`gate.gate_appointments`**: Scheduled gate arrival reservations for external trucks (`appointment_id`, `container_id`, `external_truck_id`, `driver_id`, `gate_id`, `requested_arrival`, `assigned_arrival`, `appointment_status`).
-- **`gate.gate_submissions`**: Digital paperwork and cargo declaration data submitted via portal/mobile interfaces (`submission_id`, `appointment_id`, `submitted_at`, `submission_status`, `cargo_details`, `vehicle_details`, `clearance_information`).
+- **`gate.gate_submissions`**: Digital submissions and cargo declaration data submitted via portal/mobile interfaces (`submission_id`, `appointment_id`, `submitted_at`, `submission_status`, `cargo_details`, `vehicle_details`, `clearance_information`).
 - **`gate.gate_clearances`**: Gate clearance and inspection timeline records (`clearance_id`, `appointment_id`, `predicted_clearance_time`, `actual_clearance_time`, `clearance_status`).
 
 ### 6. `staging` Schema (Raw Data Ingestion & ETL)
