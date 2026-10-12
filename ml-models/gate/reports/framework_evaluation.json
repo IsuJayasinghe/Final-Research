@@ -1,0 +1,223 @@
+{
+  "setup": {
+    "days": 60,
+    "requests_per_day": 300,
+    "lanes": 6,
+    "slot_capacity": 16,
+    "framework_max_overbook_share": 0.25,
+    "blind_overbook_factor": 1.2,
+    "seed": 7
+  },
+  "assumptions": [
+    "Booking data is synthetic; outcomes are sampled from the held-out test period Model 2 never trained on.",
+    "Six lanes share one FIFO queue; service times come from real clearance durations by container type and customs risk.",
+    "Hourly slots, no overnight carry-over; peak hours are over-subscribed by design (300 requests/day vs 16 per slot).",
+    "Re-optimization after disruptions is verified by tests/demo, not included in this steady-state comparison.",
+    "Gate service capacity is about 19 trucks/hour, so with 16 bookings/slot the gate is not saturated; the sensitivity table shows how results change when slots are tighter or looser."
+  ],
+  "results_per_day": {
+    "static_tas": {
+      "accepted": {
+        "mean": 291.733,
+        "ci95": 1.067
+      },
+      "rejected": {
+        "mean": 8.267,
+        "ci95": 1.067
+      },
+      "served": {
+        "mean": 266.367,
+        "ci95": 1.746
+      },
+      "avg_wait_min": {
+        "mean": 1.483,
+        "ci95": 0.185
+      },
+      "p90_wait_min": {
+        "mean": 5.784,
+        "ci95": 0.726
+      },
+      "avg_turn_min": {
+        "mean": 20.363,
+        "ci95": 0.33
+      },
+      "adherence": {
+        "mean": 0.889,
+        "ci95": 0.005
+      }
+    },
+    "blind_overbooking": {
+      "accepted": {
+        "mean": 299.9,
+        "ci95": 0.111
+      },
+      "rejected": {
+        "mean": 0.1,
+        "ci95": 0.111
+      },
+      "served": {
+        "mean": 273.9,
+        "ci95": 1.279
+      },
+      "avg_wait_min": {
+        "mean": 3.124,
+        "ci95": 0.566
+      },
+      "p90_wait_min": {
+        "mean": 11.102,
+        "ci95": 1.658
+      },
+      "avg_turn_min": {
+        "mean": 22.004,
+        "ci95": 0.663
+      },
+      "adherence": {
+        "mean": 0.889,
+        "ci95": 0.005
+      }
+    },
+    "framework": {
+      "accepted": {
+        "mean": 297.583,
+        "ci95": 0.684
+      },
+      "rejected": {
+        "mean": 2.417,
+        "ci95": 0.684
+      },
+      "served": {
+        "mean": 271.817,
+        "ci95": 1.47
+      },
+      "avg_wait_min": {
+        "mean": 1.856,
+        "ci95": 0.24
+      },
+      "p90_wait_min": {
+        "mean": 7.274,
+        "ci95": 0.94
+      },
+      "avg_turn_min": {
+        "mean": 20.729,
+        "ci95": 0.342
+      },
+      "adherence": {
+        "mean": 0.889,
+        "ci95": 0.005
+      }
+    }
+  },
+  "framework_vs_static_paired": {
+    "served": {
+      "mean": 5.45,
+      "ci95": 0.626
+    },
+    "accepted": {
+      "mean": 5.85,
+      "ci95": 0.65
+    },
+    "avg_wait_min": {
+      "mean": 0.373,
+      "ci95": 0.162
+    },
+    "avg_turn_min": {
+      "mean": 0.365,
+      "ci95": 0.168
+    },
+    "adherence": {
+      "mean": -0.0,
+      "ci95": 0.001
+    }
+  },
+  "framework_vs_blind_paired": {
+    "served": {
+      "mean": -2.083,
+      "ci95": 0.606
+    },
+    "avg_wait_min": {
+      "mean": -1.268,
+      "ci95": 0.406
+    },
+    "avg_turn_min": {
+      "mean": -1.275,
+      "ci95": 0.407
+    }
+  },
+  "sensitivity_by_slot_capacity": {
+    "12": {
+      "static_tas": {
+        "served": 234.8,
+        "avg_wait_min": 0.36,
+        "p90_wait_min": 0.35
+      },
+      "blind_overbooking": {
+        "served": 254.17,
+        "avg_wait_min": 0.84,
+        "p90_wait_min": 3.02
+      },
+      "framework": {
+        "served": 244.6,
+        "avg_wait_min": 0.46,
+        "p90_wait_min": 0.79
+      },
+      "framework_vs_static_served": {
+        "mean": 9.8,
+        "ci95": 0.874
+      },
+      "framework_vs_static_wait_min": {
+        "mean": 0.107,
+        "ci95": 0.063
+      }
+    },
+    "18": {
+      "static_tas": {
+        "served": 273.07,
+        "avg_wait_min": 2.39,
+        "p90_wait_min": 8.7
+      },
+      "blind_overbooking": {
+        "served": 274.53,
+        "avg_wait_min": 4.17,
+        "p90_wait_min": 14.3
+      },
+      "framework": {
+        "served": 274.43,
+        "avg_wait_min": 3.08,
+        "p90_wait_min": 10.97
+      },
+      "framework_vs_static_served": {
+        "mean": 1.367,
+        "ci95": 0.755
+      },
+      "framework_vs_static_wait_min": {
+        "mean": 0.682,
+        "ci95": 0.594
+      }
+    },
+    "20": {
+      "static_tas": {
+        "served": 274.0,
+        "avg_wait_min": 2.85,
+        "p90_wait_min": 10.14
+      },
+      "blind_overbooking": {
+        "served": 274.1,
+        "avg_wait_min": 3.89,
+        "p90_wait_min": 13.31
+      },
+      "framework": {
+        "served": 274.1,
+        "avg_wait_min": 3.2,
+        "p90_wait_min": 11.03
+      },
+      "framework_vs_static_served": {
+        "mean": 0.1,
+        "ci95": 0.196
+      },
+      "framework_vs_static_wait_min": {
+        "mean": 0.348,
+        "ci95": 0.41
+      }
+    }
+  }
+}
