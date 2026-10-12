@@ -30,7 +30,7 @@ import pulp
 SLOT_CAPACITY = int(os.environ.get("GATE_SLOT_CAPACITY", 6))  # bookable trucks per hourly slot
 MAX_OVERBOOK = int(os.environ.get("GATE_MAX_OVERBOOK", 2))  # bookings allowed above capacity
 SEARCH_RADIUS_HOURS = 3  # a booking may move this many hours either side of the request
-DEVIATION_PENALTY_MIN_PER_HOUR = 6.0  # cost of being moved away from the requested hour
+DEVIATION_PENALTY_MIN_PER_HOUR = 12.0  # cost of being moved away from the requested hour
 MOVE_PENALTY_MIN = 4.0  # stability: prefer not to move a booking at all
 UNASSIGNED_COST = 1000.0
 
@@ -147,10 +147,16 @@ def decide_slot(
 
     _, _, slot, count, expected = min(feasible)
     overbooked = count + 1 > capacity
-    if slot == hour_floor(requested):
+    req = hour_floor(requested)
+    if slot == req:
         where = "requested slot"
     else:
-        where = f"nearby slot {slot:%H:%M} (requested {hour_floor(requested):%H:%M} was fuller or more congested)"
+        req_row = next((r for r in evaluated if r["slot"] == req.isoformat(timespec="minutes")), None)
+        if req_row is not None and not req_row["feasible"]:
+            why = "the requested slot is at expected capacity"
+        else:
+            why = f"forecast gate wait {wait_fn(slot):.0f} min vs {wait_fn(req):.0f} min at the requested time"
+        where = f"slot {slot:%H:%M} instead of requested {req:%H:%M} ({why})"
     if overbooked:
         reason = (
             f"Overbooked {where}: {count} booked vs capacity {capacity}, but expected arrivals "
