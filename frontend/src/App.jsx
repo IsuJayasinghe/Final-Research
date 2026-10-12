@@ -1,6 +1,7 @@
 import { Route, Routes } from 'react-router-dom'
 import Footer from './components/Footer'
 import Navbar from './components/Navbar'
+import Appointments from './pages/gate/Appointments'
 import DocumentUpload from './pages/gate/DocumentUpload'
 import GateAllocationView from './pages/gate/GateAllocationView'
 import GateAppointment from './pages/gate/GateAppointment'
@@ -14,6 +15,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/gate-appointment" element={<GateAppointment />} />
+          <Route path="/appointments" element={<Appointments />} />
           <Route path="/document-upload" element={<DocumentUpload />} />
           <Route path="/gate-allocation" element={<GateAllocationView />} />
         </Routes>
