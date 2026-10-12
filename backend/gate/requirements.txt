@@ -11,3 +11,7 @@ pulp>=2.8,<4
 psycopg[binary]
 python-dotenv
 pytest
+rapidocr_onnxruntime
+pymupdf
+pillow
+python-multipart

@@ -159,3 +159,100 @@ def test_disruption_can_target_a_future_window(svc):
 def test_bad_disruption_start_is_rejected(svc):
     with pytest.raises(BookingError):
         svc.reoptimize(vessel_delay_hours=2, start="tomorrow-ish", now=EARLY)
+
+
+# ---- OCR document checking feeds back into the booking ------------------------------------
+
+import documents  # noqa: E402
+
+ocr_needed = pytest.mark.skipif(not documents.ocr_available(), reason="rapidocr_onnxruntime not installed")
+SLOTS = {
+    "booking_confirmation": "booking_confirmation",
+    "cusdec": "cusdec",
+    "gate_pass": "gate_pass",
+    "vgm": "vgm",
+    "seal_photo": "seal_match",
+    "driver_docs": "driver_docs",
+    "special_cargo": "special_cargo",
+}
+
+
+@pytest.fixture(scope="module")
+def sample_dir(tmp_path_factory):
+    from tools import make_sample_documents as gen
+
+    out = tmp_path_factory.mktemp("docs")
+    gen.main(out)
+    return out
+
+
+def doc_booking(svc, **kw):
+    """A hazardous booking for the container/truck printed on the sample documents."""
+    base = dict(
+        container_id="CSQU3054383",
+        truck_id="TRK-80579",
+        container_type="hazardous",
+        carrier="Carrier-B",
+        carrier_reliability=0.54,
+        customs_risk_flag="high",
+        missing_documents=3,
+        arrival_date=DATE,
+        arrival_hour=10,
+    )
+    base.update(kw)
+    return svc.create(req(1, **base), now=EARLY)["appointment"]["id"]
+
+
+def upload(svc, sample_dir, appointment_id, name, slot):
+    path = sample_dir / f"{name}.png"
+    return svc.check_document(path.read_bytes(), path.name, slot, appointment_id=appointment_id)
+
+
+@ocr_needed
+def test_complete_clean_documents_lower_risk_and_clear_missing_count(svc, sample_dir):
+    aid = doc_booking(svc)
+    for name, slot in SLOTS.items():
+        assert upload(svc, sample_dir, aid, name, slot)["status"] == "cleared", name
+
+    out = svc.submit_documents(aid)
+    assert out["missing"] == 0 and out["cleared"] == 7
+    assert out["before"]["missing_documents"] == 3 and out["after"]["missing_documents"] == 0
+    assert out["after"]["p_no_show"] < out["before"]["p_no_show"]
+    assert out["after"]["clearance_minutes"] < out["before"]["clearance_minutes"]
+    saved = svc.repo.get(aid)
+    assert saved.missing_documents == 0 and saved.p_no_show == out["after"]["p_no_show"]
+    assert svc.repo.events(aid)[-1]["event_type"] == "DOCUMENTS_CHECKED"
+    sub = svc.repo.submissions(aid)[0]
+    assert "CSQU3054383" in sub["cargo_details"] and "SL884213" in sub["cargo_details"]
+    assert "WP CAB-1234" in sub["vehicle_details"]
+
+
+@ocr_needed
+def test_flagged_and_unuploaded_documents_count_as_missing(svc, sample_dir):
+    aid = doc_booking(svc, missing_documents=0)
+    assert upload(svc, sample_dir, aid, "vgm_wrong_container", "vgm")["status"] == "flagged"
+    assert upload(svc, sample_dir, aid, "booking_confirmation", "booking_confirmation")["status"] == "cleared"
+    out = svc.submit_documents(aid)
+    assert out["cleared"] == 1 and out["missing"] == 6
+    assert out["after"]["p_no_show"] > out["before"]["p_no_show"]  # more missing paperwork -> higher risk
+    statuses = {r["doc_key"]: r["status"] for r in out["required"]}
+    assert statuses["vgm"] == "flagged" and statuses["cusdec"] == "missing"
+    assert "container_mismatch" in {i["code"] for i in out["issues"]["vgm"]}
+
+
+@ocr_needed
+def test_booking_supplies_the_expected_container(svc, sample_dir):
+    aid = doc_booking(svc, container_id="MSKU1234565")  # booked a different container than the documents show
+    assert upload(svc, sample_dir, aid, "vgm", "vgm")["status"] == "flagged"
+
+
+def test_document_submission_guards(svc):
+    with pytest.raises(BookingError):
+        svc.check_document(b"x", "a.png", "vgm", appointment_id=99)
+    aid = doc_booking(svc)
+    with pytest.raises(BookingError):
+        svc.submit_documents(aid)  # nothing checked yet
+    svc._doc_results[aid] = {"vgm": {"status": "cleared", "fields": {}, "issues": []}}
+    svc.cancel(aid)
+    with pytest.raises(BookingError):
+        svc.submit_documents(aid)

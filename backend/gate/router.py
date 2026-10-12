@@ -9,8 +9,9 @@ from datetime import datetime, timedelta
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
+import documents
 import ml_models
 import service
 from schemas import (
@@ -211,3 +212,55 @@ def model_metrics():
         if path.exists():
             out[key] = json.loads(path.read_text())
     return out
+
+
+# ---- OCR document checking -----------------------------------------------------------------
+
+@router.post("/documents/check")
+def check_document(
+    file: UploadFile = File(...),
+    doc_key: str = Form(...),
+    appointment_id: int | None = Form(None),
+    expected_container_id: str | None = Form(None),
+    expected_truck_id: str | None = Form(None),
+    expected_date: str | None = Form(None),
+    container_type: str | None = Form(None),
+):
+    """OCR one uploaded document (image or PDF), classify it, extract its fields and validate
+    it against the booking. With `appointment_id` the booking supplies the expected values and
+    the verdict is remembered for the appointment's document submission."""
+    data = file.file.read(documents.MAX_BYTES + 1)
+    ctx = {
+        "expected_container_id": expected_container_id,
+        "expected_truck_id": expected_truck_id,
+        "expected_date": expected_date,
+        "container_type": container_type,
+    }
+    try:
+        return service.get_service().check_document(data, file.filename or "", doc_key, appointment_id, ctx)
+    except documents.DocumentError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except service.BookingError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ImportError:
+        raise HTTPException(status_code=503, detail="OCR engine is not installed (pip install rapidocr_onnxruntime).")
+
+
+@router.get("/appointments/{appointment_id}/documents")
+def appointment_documents(appointment_id: int):
+    """OCR verdicts recorded so far for this appointment."""
+    return _run(service.get_service().document_results, appointment_id)
+
+
+@router.post("/appointments/{appointment_id}/documents/submit")
+def submit_documents(appointment_id: int):
+    """Submit the checked documents: counts missing/flagged ones and re-scores no-show risk and
+    clearance time for the appointment."""
+    return _run(service.get_service().submit_documents, appointment_id)
+
+
+@router.get("/documents/required")
+def required_documents(container_type: str = "standard"):
+    return [
+        {"doc_key": k, "label": documents.DOCUMENT_LABELS[k]} for k in documents.required_documents(container_type)
+    ]

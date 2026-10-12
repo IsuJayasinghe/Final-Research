@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import documents
 import ml_models
 import noshow
 import service
@@ -15,6 +16,10 @@ async def lifespan(app: FastAPI):
     ml_models.load_models()
     noshow.load_model()
     service.init(get_repository())
+    try:
+        documents.warm_up()  # load the OCR model now so the first upload is not slow
+    except ImportError:
+        pass  # OCR is optional; /api/documents/check reports 503 if it is missing
     yield
 
 

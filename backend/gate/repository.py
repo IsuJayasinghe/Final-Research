@@ -43,6 +43,8 @@ class Appointment:
     overbooked: bool = False
     decision_reason: str = ""
     risk_summary: str = ""
+    weather_severity: int = 0
+    vessel_delay: bool = False
     id: int | None = None
     created_at: datetime = field(default_factory=datetime.now)
 
@@ -62,6 +64,7 @@ class MemoryRepository:
     def __init__(self):
         self._rows: dict[int, Appointment] = {}
         self._events: list[dict] = []
+        self._submissions: list[dict] = []
         self._ids = itertools.count(1)
         self._lock = threading.Lock()
 
@@ -102,9 +105,24 @@ class MemoryRepository:
     def events(self, appointment_id: int) -> list[dict]:
         return [e for e in self._events if e["appointment_id"] == appointment_id]
 
+    def add_submission(self, appointment_id, cargo_details="", vehicle_details="", clearance_information=""):
+        self._submissions.append(
+            {
+                "appointment_id": appointment_id,
+                "submitted_at": datetime.now().isoformat(timespec="seconds"),
+                "cargo_details": cargo_details,
+                "vehicle_details": vehicle_details,
+                "clearance_information": clearance_information,
+            }
+        )
+
+    def submissions(self, appointment_id: int) -> list[dict]:
+        return [s for s in self._submissions if s["appointment_id"] == appointment_id]
+
     def clear(self):
         self._rows.clear()
         self._events.clear()
+        self._submissions.clear()
 
 
 class PostgresRepository:
@@ -114,7 +132,8 @@ class PostgresRepository:
         "appointment_id, external_truck_id, container_id, carrier_company, container_type, cargo_category, "
         "requested_arrival, assigned_arrival, gate_id, appointment_status, customs_risk_flag, "
         "missing_documents_count, carrier_reliability_score, no_show_probability, late_probability, "
-        "predicted_clearance_minutes, overbooked, decision_reason, risk_summary, created_at"
+        "predicted_clearance_minutes, overbooked, decision_reason, risk_summary, created_at, "
+        "weather_severity, vessel_delay"
     )
 
     def __init__(self, url: str):
@@ -157,6 +176,8 @@ class PostgresRepository:
             overbooked=bool(r["overbooked"]),
             decision_reason=r["decision_reason"] or "",
             risk_summary=r["risk_summary"] or "",
+            weather_severity=r["weather_severity"] or 0,
+            vessel_delay=bool(r["vessel_delay"]),
             created_at=r["created_at"],
         )
 
@@ -173,14 +194,15 @@ class PostgresRepository:
                 "container_type, cargo_category, requested_arrival, assigned_arrival, gate_id, "
                 "appointment_status, customs_risk_flag, missing_documents_count, carrier_reliability_score, "
                 "no_show_probability, late_probability, predicted_clearance_minutes, overbooked, "
-                "decision_reason, risk_summary, created_at) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "decision_reason, risk_summary, created_at, weather_severity, vessel_delay) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
                 "RETURNING appointment_id",
                 (
                     a.truck_id, a.container_id, a.carrier, a.container_type, a.cargo_category,
                     a.requested_slot, a.assigned_slot, f"GATE-{a.lane}" if a.lane else None, a.status,
                     a.customs_risk_flag, a.missing_documents, a.carrier_reliability, a.p_no_show, a.p_late,
                     a.predicted_clearance_minutes, a.overbooked, a.decision_reason, a.risk_summary, a.created_at,
+                    a.weather_severity, a.vessel_delay,
                 ),
             ).fetchone()
         a.id = row["appointment_id"]
@@ -241,6 +263,32 @@ class PostgresRepository:
                 "VALUES (%s, %s, %s, %s, %s)",
                 (appointment_id, event_type, old_slot, new_slot, reason),
             )
+
+    def add_submission(self, appointment_id, cargo_details="", vehicle_details="", clearance_information=""):
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO gate.gate_submissions (appointment_id, cargo_details, vehicle_details, clearance_information) "
+                "VALUES (%s, %s, %s, %s)",
+                (appointment_id, cargo_details, vehicle_details, clearance_information),
+            )
+
+    def submissions(self, appointment_id: int) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT submitted_at, cargo_details, vehicle_details, clearance_information "
+                "FROM gate.gate_submissions WHERE appointment_id = %s ORDER BY submission_id",
+                (appointment_id,),
+            ).fetchall()
+        return [
+            {
+                "appointment_id": appointment_id,
+                "submitted_at": r["submitted_at"].isoformat(timespec="seconds"),
+                "cargo_details": r["cargo_details"] or "",
+                "vehicle_details": r["vehicle_details"] or "",
+                "clearance_information": r["clearance_information"] or "",
+            }
+            for r in rows
+        ]
 
     def events(self, appointment_id: int) -> list[dict]:
         with self._connect() as conn:
