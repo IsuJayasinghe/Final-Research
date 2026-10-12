@@ -13,7 +13,10 @@ const NAV_LINKS = [
 const SOLUTIONS = [
   { label: 'Gate Appointment', to: '/gate-appointment' },
   { label: 'Document Upload', to: '/document-upload' },
+  { label: 'My Appointments', to: '/appointments' },
   { label: 'Gate Allocation (Port Authority)', to: '/gate-allocation' },
+  { label: 'Slot Optimization', to: '/gate-optimization' },
+  { label: 'Model Results', to: '/model-results' },
 ]
 
 export default function Navbar() {
