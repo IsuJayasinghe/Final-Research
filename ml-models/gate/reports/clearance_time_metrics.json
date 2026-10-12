@@ -1,0 +1,18 @@
+{
+  "best_model": "xgboost",
+  "baseline_mean": {
+    "rmse": 11.146,
+    "mae": 8.648,
+    "mape": 66.015
+  },
+  "xgboost": {
+    "rmse": 3.005,
+    "mae": 2.415,
+    "mape": 19.313
+  },
+  "random_forest": {
+    "rmse": 3.026,
+    "mae": 2.425,
+    "mape": 19.312
+  }
+}

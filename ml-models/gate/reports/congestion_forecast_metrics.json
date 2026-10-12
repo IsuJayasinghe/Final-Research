@@ -1,0 +1,72 @@
+{
+  "sarimax": {
+    "lane_1": {
+      "rmse": 3.865,
+      "mae": 2.467,
+      "mape": 93.196,
+      "fit_seconds": 34.3
+    },
+    "lane_2": {
+      "rmse": 4.639,
+      "mae": 3.261,
+      "mape": 111.185,
+      "fit_seconds": 41.2
+    },
+    "lane_3": {
+      "rmse": 3.303,
+      "mae": 2.142,
+      "mape": 120.611,
+      "fit_seconds": 48.4
+    },
+    "lane_4": {
+      "rmse": 4.211,
+      "mae": 2.69,
+      "mape": 95.078,
+      "fit_seconds": 54.5
+    },
+    "lane_5": {
+      "rmse": 4.13,
+      "mae": 2.662,
+      "mape": 93.637,
+      "fit_seconds": 35.4
+    },
+    "lane_6": {
+      "rmse": 3.695,
+      "mae": 2.616,
+      "mape": 85.23,
+      "fit_seconds": 35.4
+    }
+  },
+  "naive_baseline": {
+    "lane_1": {
+      "rmse": 5.517,
+      "mae": 4.323,
+      "mape": 169.068
+    },
+    "lane_2": {
+      "rmse": 7.011,
+      "mae": 6.321,
+      "mape": 368.799
+    },
+    "lane_3": {
+      "rmse": 4.288,
+      "mae": 3.295,
+      "mape": 128.509
+    },
+    "lane_4": {
+      "rmse": 6.122,
+      "mae": 4.231,
+      "mape": 86.495
+    },
+    "lane_5": {
+      "rmse": 5.923,
+      "mae": 4.477,
+      "mape": 140.653
+    },
+    "lane_6": {
+      "rmse": 6.051,
+      "mae": 5.414,
+      "mape": 254.425
+    }
+  }
+}
