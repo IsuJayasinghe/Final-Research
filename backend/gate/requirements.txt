@@ -6,3 +6,8 @@ scikit-learn
 xgboost
 statsmodels
 joblib
+shap
+pulp>=2.8,<4
+psycopg[binary]
+python-dotenv
+pytest
