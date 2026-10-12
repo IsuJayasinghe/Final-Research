@@ -1,0 +1,150 @@
+{
+  "serving_model": "xgboost",
+  "selection_validation_roc_auc": {
+    "logistic_regression": 0.64,
+    "xgboost": 0.648
+  },
+  "classes": [
+    "late",
+    "no_show",
+    "on_time"
+  ],
+  "train_rows": 11200,
+  "test_rows": 2800,
+  "test_class_share": {
+    "on_time": 0.694,
+    "late": 0.222,
+    "no_show": 0.084
+  },
+  "class_balanced_test_metrics": {
+    "logistic_regression": {
+      "per_class": {
+        "late": {
+          "precision": 0.302,
+          "recall": 0.393,
+          "f1-score": 0.341
+        },
+        "no_show": {
+          "precision": 0.18,
+          "recall": 0.54,
+          "f1-score": 0.27
+        },
+        "on_time": {
+          "precision": 0.8,
+          "recall": 0.529,
+          "f1-score": 0.637
+        }
+      },
+      "macro_f1": 0.416,
+      "accuracy": 0.5,
+      "roc_auc_macro_ovr": 0.673,
+      "roc_auc_no_show": 0.737,
+      "pr_auc_no_show": 0.226,
+      "confusion_matrix": [
+        [
+          245,
+          172,
+          206
+        ],
+        [
+          58,
+          127,
+          50
+        ],
+        [
+          509,
+          406,
+          1027
+        ]
+      ]
+    },
+    "xgboost": {
+      "per_class": {
+        "late": {
+          "precision": 0.293,
+          "recall": 0.371,
+          "f1-score": 0.327
+        },
+        "no_show": {
+          "precision": 0.18,
+          "recall": 0.515,
+          "f1-score": 0.267
+        },
+        "on_time": {
+          "precision": 0.795,
+          "recall": 0.548,
+          "f1-score": 0.649
+        }
+      },
+      "macro_f1": 0.414,
+      "accuracy": 0.506,
+      "roc_auc_macro_ovr": 0.664,
+      "roc_auc_no_show": 0.731,
+      "pr_auc_no_show": 0.231,
+      "confusion_matrix": [
+        [
+          231,
+          164,
+          228
+        ],
+        [
+          67,
+          121,
+          47
+        ],
+        [
+          490,
+          387,
+          1065
+        ]
+      ]
+    }
+  },
+  "serving_model_test_metrics": {
+    "per_class": {
+      "late": {
+        "precision": 0.365,
+        "recall": 0.037,
+        "f1-score": 0.067
+      },
+      "no_show": {
+        "precision": 0.706,
+        "recall": 0.051,
+        "f1-score": 0.095
+      },
+      "on_time": {
+        "precision": 0.704,
+        "recall": 0.986,
+        "f1-score": 0.821
+      }
+    },
+    "macro_f1": 0.328,
+    "accuracy": 0.696,
+    "roc_auc_macro_ovr": 0.68,
+    "roc_auc_no_show": 0.741,
+    "pr_auc_no_show": 0.249,
+    "confusion_matrix": [
+      [
+        23,
+        2,
+        598
+      ],
+      [
+        15,
+        12,
+        208
+      ],
+      [
+        25,
+        3,
+        1914
+      ]
+    ]
+  },
+  "serving_model_calibration": {
+    "mean_predicted_no_show": 0.0803,
+    "observed_no_show_rate": 0.0839,
+    "brier_no_show": 0.0711,
+    "brier_no_show_constant_baseline": 0.0769
+  }
+}
