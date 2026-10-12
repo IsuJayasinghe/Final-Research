@@ -5,6 +5,7 @@
 | Clearance time (XGBoost, Random Forest compared) | `src/train_clearance_time_model.py` | `models/clearance_time_model.joblib`, `reports/clearance_time_metrics.json` |
 | Per-lane congestion forecast (SARIMAX, 24h seasonality) | `src/train_congestion_forecast_models.py` | `reports/congestion_forecast_metrics.json` |
 | No-show / late-arrival risk (LR baseline vs XGBoost, SHAP) | `src/generate_booking_data.py`, `src/train_noshow_model.py` | `models/noshow_model.joblib`, `reports/noshow_model_metrics.json`, `reports/noshow_shap_importance.*` |
+| End-to-end framework evaluation (simulation) | `src/evaluate_framework.py` | `reports/framework_evaluation.json/.png` |
 | Compact forecast export for the API | `src/export_congestion_forecasts.py` | `data/processed/congestion_forecast.json` |
 
 ## Results (chronological hold-out)
@@ -22,6 +23,22 @@ booked hour, weather, traffic, vessel delay, customs risk and missing documents.
   SHAP drivers: missing documents, carrier reliability, booking lead time.
 - Data is synthetic (`generate_booking_data.py`, assumptions documented in the script).
 
+## Framework evaluation (plan section 7)
+60-day gate simulation; demand and outcomes sampled from the held-out booking period,
+6 lanes, real clearance durations. Static TAS vs blind +20% overbooking vs the framework
+(no-show-aware expected-arrivals rule), same days for every policy.
+
+| Slot capacity | Static served/day | Framework served/day | Extra avg wait | Blind +20% extra wait |
+|---|---|---|---|---|
+| 12 (scarce) | 234.8 | 244.6 (+4.2%) | +0.1 min | +0.5 min (p90 3.0 vs 0.35) |
+| 16 (headline) | 266.4 | 271.8 (+2.0%) | +0.4 min | +1.6 min (p90 11.1 vs 5.8) |
+| 18-20 (generous) | ~273-274 | ~274 | no gain | no gain |
+
+Reading: the framework recovers most of the capacity lost to no-shows without the waiting
+penalty of blind overbooking, and it matters most when slots are scarce relative to demand.
+Slot adherence is unchanged. Limits: synthetic data, shared-queue gate model, steady-state only
+(re-optimization after disruptions is covered by backend tests and the demo).
+
 ## Data
 Raw datasets are **not** committed (see `docs/data-management.md`). Place these
 files locally in `data/raw/` before training:
@@ -37,6 +54,7 @@ pip install -r requirements.txt
 python src/train_clearance_time_model.py
 python src/generate_booking_data.py
 python src/train_noshow_model.py
+python src/evaluate_framework.py
 python src/train_congestion_forecast_models.py   # slow; writes ~2.2 GB per lane (not committed)
 python src/export_congestion_forecasts.py
 ```
