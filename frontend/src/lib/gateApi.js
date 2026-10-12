@@ -75,6 +75,24 @@ export const reoptimize = ({ vesselDelayHours, queueSpikePct, windowHours, start
 
 export const clearDisruption = () => request('/api/disruption', { method: 'DELETE' })
 
+// OCR document check: the booking (if given) supplies the expected container / truck / date.
+export function checkDocument({ file, docKey, appointmentId, containerId, truckId, containerType }) {
+  const body = new FormData()
+  body.append('file', file)
+  body.append('doc_key', docKey)
+  if (appointmentId) {
+    body.append('appointment_id', appointmentId)
+  } else {
+    if (containerId) body.append('expected_container_id', containerId)
+    if (truckId) body.append('expected_truck_id', truckId)
+    if (containerType) body.append('container_type', containerType)
+  }
+  return request('/api/documents/check', { method: 'POST', body })
+}
+
+export const getAppointmentDocuments = (id) => getJson(`/api/appointments/${id}/documents`)
+export const submitDocuments = (id) => postJson(`/api/appointments/${id}/documents/submit`)
+
 export const getModelMetrics = () => getJson('/api/model-metrics')
 
 export function getCongestion() {

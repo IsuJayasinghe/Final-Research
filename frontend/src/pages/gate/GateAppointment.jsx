@@ -556,6 +556,7 @@ export default function GateAppointment() {
               <Link
                 to="/document-upload"
                 state={{
+                  appointmentId: appt.id,
                   containerId: form.containerId,
                   truckId: form.truckId,
                   containerType: form.containerType,
