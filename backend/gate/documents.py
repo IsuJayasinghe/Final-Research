@@ -323,6 +323,7 @@ def validate(doc_key: str, text: str, fields: dict, scores: dict, ocr_conf: floa
             )
         else:
             issues.append(_issue("error", "unrecognised", f"Could not recognise this as a {expected_label}. Check you uploaded the right file."))
+        return issues  # field rules would only add noise for the wrong document
 
     if MIN_OCR_CONFIDENCE <= ocr_conf < WARN_OCR_CONFIDENCE:
         issues.append(_issue("warning", "low_quality", f"Image quality is low (OCR confidence {ocr_conf:.0%}); a clearer scan is safer."))
