@@ -220,8 +220,19 @@ def main():
     print("\nTop SHAP drivers of no-show risk:")
     print(importance.head(8).to_string(index=False))
 
+    # Latest per-carrier history, so the API can score a new booking from just the carrier name.
+    history = (
+        pd.concat([train, test])
+        .sort_values("booked_slot")
+        .groupby("carrier_company")[["carrier_hist_no_show_rate", "carrier_hist_avg_lateness_min"]]
+        .last()
+        .round(4)
+        .to_dict("index")
+    )
+
     joblib.dump(
         {
+            "carrier_history": history,
             "pipeline": serving,
             "classes": CLASSES,
             "features": FEATURES,
