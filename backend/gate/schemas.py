@@ -65,3 +65,22 @@ class CongestionResponse(BaseModel):
     lanes: list[LaneCongestion]
     generated_at: str
     forecast_for: str | None = None
+
+
+class BookingRequest(ModelInputs):
+    """Create a persisted appointment: all model inputs plus identifiers and live conditions."""
+
+    truck_id: str
+    container_id: str
+    weather_severity: int = Field(0, ge=0, le=3)
+    vessel_delay: bool = False
+
+
+class DisruptionRequest(BaseModel):
+    """A change in conditions that raises forecast gate congestion for a window of slots."""
+
+    vessel_delay_hours: float = Field(0, ge=0, le=12)
+    queue_spike_pct: float = Field(0, ge=0, le=200)
+    window_hours: int = Field(4, ge=1, le=12)
+    # When the disruption begins (ISO, e.g. 2030-01-07T10:00); defaults to the next full hour.
+    start: str | None = None

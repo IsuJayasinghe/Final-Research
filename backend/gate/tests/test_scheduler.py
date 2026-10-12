@@ -72,7 +72,7 @@ def test_reoptimize_moves_unconfirmed_away_from_disrupted_window_only():
     unconfirmed = fill(T0, 3, 0.1)
     confirmed = [BookingState(99, T0, T0, 0.1, status="CONFIRMED")]
     moves = sch.reoptimize(unconfirmed, confirmed, EARLIEST, wait)
-    assert all(m.new_slot != T0 for m in moves)  # +60% congestion (+18 min) outweighs move penalties
+    assert all(m.new_slot != T0 for m in moves)  # +60% congestion (+18 min) outweighs the 16 min move cost
     assert len(moves) == 3
     assert confirmed[0].assigned_slot == T0  # confirmed bookings are untouched
 
@@ -87,7 +87,7 @@ def test_reoptimize_respects_expected_capacity():
 
 
 def test_small_disruption_does_not_cause_pointless_moves():
-    # +6 min of extra wait is cheaper than the 10 min cost of moving -> stay put
+    # +6 min of extra wait is cheaper than the 16 min cost of moving -> stay put
     dis = Disruption(kind="vessel_delay", vessel_delay_hours=4, start=T0, window_hours=1)
     wait = lambda s: 10.0 * (1 + dis.uplift(s))  # noqa: E731
     moves = sch.reoptimize(fill(T0, 3, 0.1), [], EARLIEST, wait)
