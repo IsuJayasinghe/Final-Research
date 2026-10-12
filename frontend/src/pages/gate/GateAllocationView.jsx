@@ -1,6 +1,5 @@
 import {
   AlertTriangle,
-  CheckCircle2,
   Clock,
   Gauge,
   RefreshCw,
