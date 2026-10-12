@@ -6,15 +6,21 @@ Kept as an APIRouter so the shared backend can mount it later with
 
 from datetime import datetime, timedelta
 
+import json
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException
 
 import ml_models
+import service
 from schemas import (
     AppointmentRequest,
     AppointmentResponse,
+    BookingRequest,
     ClearanceRequest,
     ClearanceResponse,
     CongestionResponse,
+    DisruptionRequest,
     LaneCongestion,
     ModelInputs,
 )
@@ -131,3 +137,77 @@ def assign_appointment(request: AppointmentRequest):
         },
         lanes=_lane_list(forecasts),
     )
+
+
+# ---- persisted, no-show-aware appointments ---------------------------------
+
+def _run(fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except service.BookingError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/appointments")
+def create_appointment(request: BookingRequest):
+    """Score no-show risk, pick the slot (overbooking rule), pick the lane, predict
+    clearance, and save the booking with the reasons for the decision."""
+    return _run(service.get_service().create, request.model_dump())
+
+
+@router.get("/appointments")
+def list_appointments():
+    return service.get_service().list()
+
+
+@router.get("/appointments/{appointment_id}/events")
+def appointment_events(appointment_id: int):
+    return _run(service.get_service().events, appointment_id)
+
+
+@router.post("/appointments/{appointment_id}/confirm")
+def confirm_appointment(appointment_id: int):
+    return _run(service.get_service().confirm, appointment_id).to_dict()
+
+
+@router.post("/appointments/{appointment_id}/cancel")
+def cancel_appointment(appointment_id: int):
+    return _run(service.get_service().cancel, appointment_id).to_dict()
+
+
+@router.post("/reoptimize")
+def reoptimize(request: DisruptionRequest):
+    """Reshuffle UNCONFIRMED bookings after a vessel delay / queue spike; confirmed stay fixed."""
+    return _run(service.get_service().reoptimize, **request.model_dump())
+
+
+@router.delete("/disruption")
+def clear_disruption():
+    service.get_service().clear_disruption()
+    return {"status": "cleared"}
+
+
+@router.get("/slots")
+def slot_board(date: str):
+    """Hourly slot load (bookings, expected arrivals, capacity, forecast wait) for one date."""
+    return _run(service.get_service().slot_board, date)
+
+
+REPORTS_DIR = Path(__file__).resolve().parents[2] / "ml-models" / "gate" / "reports"
+
+
+@router.get("/model-metrics")
+def model_metrics():
+    """Evaluation results produced by the training / evaluation scripts."""
+    out = {}
+    for key, name in {
+        "clearance_time": "clearance_time_metrics.json",
+        "congestion_forecast": "congestion_forecast_metrics.json",
+        "no_show": "noshow_model_metrics.json",
+        "shap_importance": "noshow_shap_importance.json",
+        "framework_evaluation": "framework_evaluation.json",
+    }.items():
+        path = REPORTS_DIR / name
+        if path.exists():
+            out[key] = json.loads(path.read_text())
+    return out
