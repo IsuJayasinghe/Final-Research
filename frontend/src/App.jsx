@@ -5,6 +5,7 @@ import Appointments from './pages/gate/Appointments'
 import DocumentUpload from './pages/gate/DocumentUpload'
 import GateAllocationView from './pages/gate/GateAllocationView'
 import GateAppointment from './pages/gate/GateAppointment'
+import Optimization from './pages/gate/Optimization'
 import Home from './pages/Home'
 
 function App() {
@@ -16,6 +17,7 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/gate-appointment" element={<GateAppointment />} />
           <Route path="/appointments" element={<Appointments />} />
+          <Route path="/gate-optimization" element={<Optimization />} />
           <Route path="/document-upload" element={<DocumentUpload />} />
           <Route path="/gate-allocation" element={<GateAllocationView />} />
         </Routes>
