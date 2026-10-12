@@ -12,8 +12,11 @@ layer and storage.
 
 from __future__ import annotations
 
+import dataclasses
+import json
 from datetime import datetime, timedelta
 
+import documents
 import ml_models
 import noshow
 import scheduler
@@ -21,6 +24,7 @@ from repository import ACTIVE_STATUSES, Appointment
 from scheduler import BookingState, Disruption
 
 HIGH_RISK_NOTE_THRESHOLD = 0.15  # mention no-show risk in move explanations above this
+MODEL_MAX_MISSING = 3  # the models were trained on 0-3 missing documents
 
 
 class BookingError(ValueError):
@@ -39,6 +43,7 @@ class GateService:
     def __init__(self, repo):
         self.repo = repo
         self.disruption: Disruption | None = None
+        self._doc_results: dict[int, dict[str, dict]] = {}  # appointment id -> document slot -> OCR verdict
 
     # -- forecast helpers -------------------------------------------------
     @staticmethod
@@ -120,6 +125,8 @@ class GateService:
             overbooked=decision.overbooked,
             decision_reason=decision.reason,
             risk_summary=risk["summary"],
+            weather_severity=req.get("weather_severity", 0),
+            vessel_delay=req.get("vessel_delay", False),
         )
         lanes = []
         wait = gate_entry = departure = None
@@ -158,6 +165,131 @@ class GateService:
                 "departure": departure.isoformat(timespec="minutes") if departure else None,
             },
             "lanes": lanes,
+        }
+
+    # -- OCR document checking -----------------------------------------------
+    def check_document(
+        self,
+        data: bytes,
+        filename: str,
+        doc_key: str,
+        appointment_id: int | None = None,
+        ctx: dict | None = None,
+    ) -> dict:
+        """OCR + validate one upload. With an appointment id, the booking supplies the expected
+        container / truck / date and the verdict is remembered for the submission."""
+        ctx = dict(ctx or {})
+        appointment = None
+        if appointment_id is not None:
+            appointment = self._require(appointment_id)
+            slot = appointment.assigned_slot or appointment.requested_slot
+            ctx.update(
+                expected_container_id=appointment.container_id,
+                expected_truck_id=appointment.truck_id,
+                expected_date=slot.strftime("%Y-%m-%d"),
+                container_type=appointment.container_type,
+            )
+        result = documents.check_document(data, filename, doc_key, ctx)
+        if appointment is not None:
+            self._doc_results.setdefault(appointment.id, {})[doc_key] = result
+        return result
+
+    def document_results(self, appointment_id: int) -> dict:
+        self._require(appointment_id)
+        return self._doc_results.get(appointment_id, {})
+
+    def _rescore(self, a: Appointment, missing: int) -> tuple[dict, float | None]:
+        """No-show risk and clearance time for this booking with a given missing-document count."""
+        lead = max(1.0, (a.requested_slot - datetime.now()).total_seconds() / 3600)
+        capped = min(missing, MODEL_MAX_MISSING)
+        row = noshow.build_row(
+            arrival=a.requested_slot,
+            carrier=a.carrier,
+            container_type=a.container_type,
+            cargo_category=a.cargo_category,
+            customs_risk_flag=a.customs_risk_flag,
+            missing_documents=capped,
+            carrier_reliability=a.carrier_reliability,
+            lead_time_hours=lead,
+            weather_severity=a.weather_severity,
+            vessel_delay=a.vessel_delay,
+        )
+        risk = noshow.predict_risk(row)
+        clearance = None
+        if a.assigned_slot:
+            _, queue, _ = self._lane_for(a.assigned_slot)
+            clearance = self._clearance(dataclasses.replace(a, missing_documents=capped), a.assigned_slot, queue)
+        return risk, clearance
+
+    def submit_documents(self, appointment_id: int) -> dict:
+        """Turn the stored OCR verdicts into a missing-document count and re-score the booking."""
+        a = self._require(appointment_id)
+        if a.status == "CANCELLED":
+            raise BookingError("This appointment is cancelled.")
+        results = self._doc_results.get(a.id, {})
+        if not results:
+            raise BookingError("Upload and check at least one document first.")
+
+        required = documents.required_documents(a.container_type)
+        statuses = {k: results.get(k, {}).get("status", "missing") for k in required}
+        cleared = [k for k, v in statuses.items() if v == "cleared"]
+        missing = len(required) - len(cleared)
+
+        old_missing = a.missing_documents  # the in-memory repo returns live objects; read before updating
+        before_risk, before_clearance = self._rescore(a, old_missing)
+        after_risk, after_clearance = self._rescore(a, missing)
+        summary = f"{len(cleared)} of {len(required)} required documents cleared; {missing} missing or flagged."
+
+        self.repo.update(
+            a.id,
+            missing_documents=missing,
+            p_no_show=after_risk["p_no_show"],
+            p_late=after_risk["p_late"],
+            risk_summary=after_risk["summary"],
+            predicted_clearance_minutes=after_clearance if after_clearance is not None else a.predicted_clearance_minutes,
+        )
+
+        def field(name):
+            for r in results.values():
+                if name in r["fields"]:
+                    return r["fields"][name]
+            return None
+
+        containers = sorted({c for r in results.values() for c in r["fields"].get("container_numbers", [])})
+        issues = {k: r["issues"] for k, r in results.items() if r["issues"]}
+        self.repo.add_submission(
+            a.id,
+            cargo_details=json.dumps(
+                {
+                    "containers": containers,
+                    "seal_number": field("seal_number"),
+                    "weight_kg": field("weight_kg"),
+                    "un_number": field("un_number"),
+                    "temperature_c": field("temperature_c"),
+                    "booking_no": field("booking_no"),
+                }
+            ),
+            vehicle_details=json.dumps(
+                {"truck_id": field("truck_id"), "plate": field("plate"), "licence_no": field("licence_no")}
+            ),
+            clearance_information=json.dumps({"statuses": statuses, "summary": summary, "issues": issues}),
+        )
+        before_p, after_p = before_risk["p_no_show"], after_risk["p_no_show"]
+        reason = f"{summary} No-show risk {before_p:.0%} -> {after_p:.0%}."
+        if before_clearance is not None and after_clearance is not None:
+            reason += f" Predicted clearance {before_clearance:.0f} -> {after_clearance:.0f} min."
+        self.repo.add_event(a.id, "DOCUMENTS_CHECKED", a.assigned_slot, a.assigned_slot, reason)
+
+        return {
+            "appointment": self.repo.get(a.id).to_dict(),
+            "summary": summary,
+            "required": [{"doc_key": k, "label": documents.DOCUMENT_LABELS[k], "status": statuses[k]} for k in required],
+            "cleared": len(cleared),
+            "missing": missing,
+            "before": {"missing_documents": old_missing, "p_no_show": before_p, "clearance_minutes": before_clearance},
+            "after": {"missing_documents": missing, "p_no_show": after_p, "clearance_minutes": after_clearance},
+            "drivers": after_risk["drivers"],
+            "issues": issues,
         }
 
     # -- lifecycle --------------------------------------------------------
