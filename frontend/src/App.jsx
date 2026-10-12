@@ -1,6 +1,7 @@
 import { Route, Routes } from 'react-router-dom'
 import Footer from './components/Footer'
 import Navbar from './components/Navbar'
+import GateAppointment from './pages/gate/GateAppointment'
 import Home from './pages/Home'
 
 function App() {
@@ -10,6 +11,7 @@ function App() {
       <main className="flex-1 bg-white">
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/gate-appointment" element={<GateAppointment />} />
         </Routes>
       </main>
       <Footer />
