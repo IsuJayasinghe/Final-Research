@@ -16,7 +16,7 @@ const hhmm = (iso) => iso.slice(11, 16)
 function SlotRow({ row, scale }) {
   const over = row.bookings > row.capacity
   return (
-    <li className="grid grid-cols-[3.5rem_1fr_9rem] items-center gap-3 text-xs">
+    <li className="grid grid-cols-[3.5rem_1fr_13rem] items-center gap-3 text-xs">
       <span className="font-medium text-gray-700">{hhmm(row.slot)}</span>
       <span className="relative block h-4 rounded bg-gray-100">
         <span
