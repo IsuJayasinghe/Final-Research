@@ -100,6 +100,12 @@ def _get_engine():
     return _engine
 
 
+def warm_up() -> None:
+    """Load the OCR model (raises ImportError if RapidOCR is not installed)."""
+    with _engine_lock:
+        _get_engine()
+
+
 def ocr_available() -> bool:
     try:
         import rapidocr_onnxruntime  # noqa: F401
