@@ -169,7 +169,7 @@ export default function Appointments() {
             .
           </p>
         ) : (
-          <table className="w-full min-w-[820px] text-left text-sm">
+          <table className="w-full min-w-205 text-left text-sm">
             <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
               <tr>
                 <th className="w-8 px-3 py-3" />
