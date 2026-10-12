@@ -24,14 +24,38 @@ runs the component standalone.
 | DELETE | `/api/disruption` | Clear the active disruption |
 | GET | `/api/slots?date=` | Hourly slot load: bookings, expected arrivals, capacity, forecast wait |
 | GET | `/api/model-metrics` | Evaluation reports for the UI results page |
+| POST | `/api/documents/check` | OCR one uploaded document (image/PDF): classify, extract fields, validate against the booking |
+| GET | `/api/appointments/{id}/documents` | OCR verdicts recorded for an appointment |
+| POST | `/api/appointments/{id}/documents/submit` | Count cleared vs missing/flagged documents and re-score no-show risk and clearance time |
+| GET | `/api/documents/required?container_type=` | Required document slots for a container type |
 | POST | `/api/assign-appointment` | Original single-shot lane+slot assignment (no persistence) |
 | POST | `/api/predict-clearance` | Clearance-time model on its own |
 | GET | `/api/congestion?at=` | Per-lane forecast queue and wait for a chosen hour |
 
+## OCR document checking (`documents.py`)
+Uploads are read with **RapidOCR** (ONNX, pip-only - no Tesseract install); digital PDFs use their text
+layer, scanned PDFs are rendered then OCR'd. Each file then goes through:
+1. **classify** into one of the 7 slots (booking confirmation, CUSDEC, gate pass, VGM, container/seal, driver and
+   vehicle, special cargo) with weighted keywords;
+2. **extract** container number (ISO 6346 check digit, O/0-style OCR repair), seal, VGM weight, booking no., truck,
+   plate, licence, UN number, set-point temperature, dates;
+3. **validate** against the booking: container must match, truck/date on the gate pass, VGM weight plausible
+   (1,000-40,000 kg), seal present, UN number for hazardous, set point for reefer, wrong-slot detection, low
+   OCR confidence -> `unreadable`;
+4. **verdict**: `cleared` / `flagged` / `unreadable` with errors and warnings.
+
+On **submit**, flagged or missing documents become the appointment's `missing_documents` count, no-show risk and
+clearance time are re-scored by the models, the extracted fields are saved to `gate.gate_submissions`, and the
+change is logged as a `DOCUMENTS_CHECKED` event. Files are processed in memory and never stored.
+
+Demo files: `python tools/make_sample_documents.py` writes good and faulty sample documents (git-ignored) for
+container `CSQU3054383`, truck `TRK-80579`.
+
 ## Storage
 By default bookings live in memory. To save them in the shared PostgreSQL database:
 1. Apply `database/migrations/001_gate_appointment_predictions.sql` (additive; adds prediction columns,
-   `gate.gate_appointment_events` and the six `GATE-n` lanes).
+   `gate.gate_appointment_events` and the six `GATE-n` lanes) and then `002_gate_appointment_conditions.sql`
+   (weather and vessel-delay columns).
 2. Copy `.env.example` to `.env` and set `DATABASE_URL` (never commit `.env`).
 `GET /` reports the active `storage` (`memory` or `postgresql`).
 
@@ -52,5 +76,8 @@ Docs at `http://localhost:8000/docs`. Models are produced by `ml-models/gate/`.
 ## Known limits
 - Forecast covers one week after the training cutoff; a chosen date maps onto it by hour-of-week.
 - Wait time = forecast queue x 5.5 min (no separate model).
+- OCR runs on clear scans and photos of printed text; handwriting and heavily degraded images are flagged as
+  unreadable rather than guessed. Classification is keyword-based (no trained document classifier).
+- Document verdicts are held in the running process until submitted (submission itself is saved).
 - A disruption is held in the running process (cleared by `DELETE /api/disruption` or a restart).
 - Slot capacity (`GATE_SLOT_CAPACITY`, default 6 for demos) is configurable; the evaluation uses 16.
