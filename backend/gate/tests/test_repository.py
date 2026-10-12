@@ -33,6 +33,8 @@ def make(**kw):
         overbooked=True,
         decision_reason="Overbooked requested slot",
         risk_summary="No-show risk 23%.",
+        weather_severity=2,
+        vessel_delay=True,
     )
     base.update(kw)
     return Appointment(**base)
@@ -61,6 +63,7 @@ def test_add_and_get_round_trip(repo):
     assert got.p_no_show == pytest.approx(0.2345, abs=1e-4)
     assert got.predicted_clearance_minutes == pytest.approx(48.5)
     assert got.overbooked is True and got.risk_summary == "No-show risk 23%."
+    assert got.weather_severity == 2 and got.vessel_delay is True
 
 
 def test_waitlisted_booking_has_no_slot_or_lane(repo):
@@ -101,3 +104,13 @@ def test_events_are_kept_in_order(repo):
 
 def test_get_missing_returns_none(repo):
     assert repo.get(999999) is None
+
+
+def test_document_submissions_are_stored_per_appointment(repo):
+    a = repo.add(make())
+    b = repo.add(make(truck_id="B", container_id="MAEU7654321"))
+    repo.add_submission(a.id, '{"seal": "SL1"}', '{"plate": "WP CAB-1234"}', '{"missing": 0}')
+    repo.add_submission(b.id, "{}", "{}", '{"missing": 2}')
+    got = repo.submissions(a.id)
+    assert len(got) == 1 and got[0]["cargo_details"] == '{"seal": "SL1"}' and got[0]["clearance_information"] == '{"missing": 0}'
+    assert repo.submissions(b.id)[0]["clearance_information"] == '{"missing": 2}'
