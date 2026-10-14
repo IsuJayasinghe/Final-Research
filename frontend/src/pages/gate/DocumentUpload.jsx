@@ -54,6 +54,8 @@ const FIELD_LABELS = {
   truck_id: 'Truck',
   plate: 'Vehicle reg.',
   licence_no: 'Licence no.',
+  vessel_name: 'Vessel',
+  voyage: 'Voyage',
   hs_code: 'HS code',
   declaration_no: 'Declaration no.',
   goods_description: 'Goods',
@@ -459,12 +461,19 @@ export default function DocumentUpload() {
               ? `${outcome.summary} Fix the flagged or missing documents and resubmit.`
               : 'All documents cleared. Your booking has been updated - you are ready for a fast final verification at the gate.'}
           </p>
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <RiskDelta
               label="Missing documents"
               before={outcome.before.missing_documents}
               after={outcome.after.missing_documents}
               format={(v) => String(v)}
+            />
+            <RiskDelta
+              label="Linked vessel"
+              before={outcome.before.vessel_delay}
+              after={outcome.after.vessel_delay}
+              format={(v) => (v ? 'Delayed' : 'On time')}
+              order={(v) => (v ? 1 : 0)}
             />
             <RiskDelta
               label="Customs risk"
@@ -481,6 +490,25 @@ export default function DocumentUpload() {
               format={(v) => `${Math.round(v)} min`}
             />
           </div>
+          {outcome.vessel && outcome.vessel.delayed !== null && (
+            <p className="mt-3 text-xs text-gray-700">
+              <b>Vessel {outcome.vessel.vessel}</b> (read from your booking confirmation):{' '}
+              {outcome.vessel.delayed ? `delayed ${outcome.vessel.delay_hours} h` : 'on schedule'} - {outcome.vessel.source}.
+              {outcome.vessel.delayed && (
+                <>
+                  {' '}
+                  <Link to="/gate-optimization" className="font-medium text-[#123a5c] hover:underline">
+                    Re-plan affected slots
+                  </Link>
+                </>
+              )}
+            </p>
+          )}
+          {!outcome.vessel && (
+            <p className="mt-3 text-xs text-amber-700">
+              No booking confirmation was checked, so the linked vessel&apos;s delay is still unknown.
+            </p>
+          )}
           {outcome.customs_assessment && (
             <p className="mt-3 text-xs text-gray-700">
               <b>Customs risk {outcome.customs_assessment.level}</b> (read from your customs declaration):{' '}
