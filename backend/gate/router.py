@@ -15,6 +15,7 @@ import documents
 import ml_models
 import noshow
 import service
+import templates
 import vessels
 import weather
 from schemas import (
@@ -260,6 +261,14 @@ def submit_documents(appointment_id: int):
     """Submit the checked documents: counts missing/flagged ones and re-scores no-show risk and
     clearance time for the appointment."""
     return _run(service.get_service().submit_documents, appointment_id)
+
+
+@router.get("/documents/templates")
+def document_templates(container_type: str = "standard"):
+    """What each document must contain: the required and optional details, with hints. `needed` marks the
+    documents this container type must submit."""
+    needed = set(documents.required_documents(container_type))
+    return [{**t, "needed": t["doc_key"] in needed} for t in templates.describe_templates(container_type)]
 
 
 @router.get("/documents/required")

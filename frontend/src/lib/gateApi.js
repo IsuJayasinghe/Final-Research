@@ -87,6 +87,10 @@ export function checkDocument({ file, docKey, appointmentId, containerId, truckI
   return request('/api/documents/check', { method: 'POST', body })
 }
 
+// what each document must contain (required and optional details); `needed` marks the slots this container type needs
+export const getDocumentTemplates = (containerType) =>
+  getJson(`/api/documents/templates?container_type=${encodeURIComponent(containerType ?? 'standard')}`)
+
 export const getAppointmentDocuments = (id) => getJson(`/api/appointments/${id}/documents`)
 export const submitDocuments = (id) => postJson(`/api/appointments/${id}/documents/submit`)
 
