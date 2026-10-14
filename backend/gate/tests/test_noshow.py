@@ -115,7 +115,7 @@ def test_unknown_weather_falls_between_clear_and_storm():
     storm = noshow.predict_risk_for_documents("low", 0, **args(weather_severity=3))["p_no_show"]
     unknown = noshow.predict_risk_for_documents("low", 0, **args(weather_severity=None))
     assert clear < unknown["p_no_show"] < storm
-    assert unknown["weather_known"] is False and "weather forecast unavailable" in unknown["summary"]
+    assert unknown["weather_known"] is False and "weather forecast unavailable" in unknown["summary"].lower()
     assert not any(d["feature"] == "weather_severity" for d in unknown["drivers"])
 
 
@@ -124,13 +124,13 @@ def test_unknown_vessel_delay_falls_between_on_time_and_delayed():
     delayed = noshow.predict_risk_for_documents("low", 0, **args(vessel_delay=True))["p_no_show"]
     unknown = noshow.predict_risk_for_documents("low", 0, **args(vessel_delay=None))
     assert on_time < unknown["p_no_show"] < delayed
-    assert unknown["vessel_known"] is False and "vessel delay not known yet" in unknown["summary"]
+    assert unknown["vessel_known"] is False and "vessel delay not known yet" in unknown["summary"].lower()
 
 
 def test_everything_unknown_is_still_a_valid_distribution_and_names_each_gap():
     out = noshow.predict_risk_for_documents(None, None, **args(weather_severity=None, vessel_delay=None))
     assert abs(out["p_on_time"] + out["p_late"] + out["p_no_show"] - 1) < 1e-3
-    assert "documents not checked yet".capitalize() in out["summary"]
+    assert "documents not checked yet" in out["summary"].lower()
     assert "vessel delay not known yet" in out["summary"] and "weather forecast unavailable" in out["summary"]
     assert not any(out[k] for k in ("documents_known", "weather_known", "vessel_known"))
 
