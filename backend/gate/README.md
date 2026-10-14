@@ -28,9 +28,25 @@ runs the component standalone.
 | GET | `/api/appointments/{id}/documents` | OCR verdicts recorded for an appointment |
 | POST | `/api/appointments/{id}/documents/submit` | Count cleared vs missing/flagged documents and re-score no-show risk and clearance time |
 | GET | `/api/documents/required?container_type=` | Required document slots for a container type |
+| GET | `/api/weather?date=` / `/api/carriers` / `/api/vessel-delay?vessel=&date=` | The derived conditions above |
 | POST | `/api/assign-appointment` | Original single-shot lane+slot assignment (no persistence) |
 | POST | `/api/predict-clearance` | Clearance-time model on its own |
 | GET | `/api/congestion?at=` | Per-lane forecast queue and wait for a chosen hour |
+
+## Nothing about the booking's conditions is typed in
+A booking only needs who, what and when (truck, container, carrier, cargo, arrival date and hour). Everything else
+the models use is derived:
+
+| Input | Source |
+|---|---|
+| Carrier reliability and past no-show rate | The carrier's history stored in the no-show model (`GET /api/carriers`) |
+| Weather severity (0 clear .. 3 storm) | Live **Open-Meteo** forecast for the port on the arrival day (`weather.py`, `GET /api/weather?date=`); unavailable or beyond the 16-day range -> unknown, seasonal typical assumed |
+| Linked vessel and its delay | Vessel name read from the booking confirmation by OCR, then looked up in the vessel schedule (`vessels.py`). Set `VESSEL_API_URL` to a Component 1 endpoint returning `{"delay_hours": n}` for `?vessel=&date=`; without it a labelled **simulated** schedule is used (`MV OCEAN PIONEER` 5 h, `MV PACIFIC STAR` 3 h, `MV EVER GRACE` on time, others ~12% delayed) |
+| Customs risk and missing documents | OCR of the uploaded documents (below) |
+
+Anything not yet known is stored as NULL and the risk model averages over the typical situation from the training
+data, listing only what is actually known as the reasons. Explicit values can still be passed to the API for
+simulations and tests.
 
 ## Customs risk and missing documents are derived, not typed
 A booking is created without them (`POST /api/appointments` leaves `customs_risk_flag` / `missing_documents` out;
@@ -71,7 +87,8 @@ declarations of low, medium, high and incomplete risk (`cusdec*.png`).
 By default bookings live in memory. To save them in the shared PostgreSQL database:
 1. Apply `database/migrations/001_gate_appointment_predictions.sql` (additive; adds prediction columns,
    `gate.gate_appointment_events` and the six `GATE-n` lanes) and then `002_gate_appointment_conditions.sql`
-   (weather and vessel-delay columns).
+   (weather and vessel-delay columns), `003_gate_appointment_auto_conditions.sql` (linked vessel and weather source;
+   weather and vessel delay may be NULL).
 2. Copy `.env.example` to `.env` and set `DATABASE_URL` (never commit `.env`).
 `GET /` reports the active `storage` (`memory` or `postgresql`).
 

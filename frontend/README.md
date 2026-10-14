@@ -5,7 +5,7 @@ React 19 + Vite + Tailwind + React Router. One web UI for all four components.
 ## Component 4 — Gate Appointment pages (`src/pages/gate/`)
 | Route | Page | Backed by |
 |---|---|---|
-| `/gate-appointment` | Booking form (customs risk and missing documents are not typed - OCR derives them later) -> no-show risk (SHAP reasons), overbooking decision, lane, clearance time; confirm/cancel | `POST /api/appointments` |
+| `/gate-appointment` | Booking form (only who/what/when is typed: weather, carrier reliability, vessel, customs risk and missing documents are derived) -> no-show risk (SHAP reasons), overbooking decision, lane, clearance time; confirm/cancel | `POST /api/appointments` |
 | `/appointments` | Saved bookings, confirm/cancel, decision history | `GET /api/appointments`, `/events` |
 | `/gate-optimization` | Hourly slot board; inject vessel delay / queue spike and re-optimize unconfirmed bookings | `GET /api/slots`, `POST /api/reoptimize` |
 | `/gate-allocation` | Per-lane queue and wait monitoring | `GET /api/congestion` |
