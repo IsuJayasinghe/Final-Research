@@ -78,8 +78,11 @@ class BookingRequest(ModelInputs):
     container_id: str
     customs_risk_flag: CustomsRisk | None = None
     missing_documents: int | None = Field(None, ge=0, le=7)
-    weather_severity: int = Field(0, ge=0, le=3)
-    vessel_delay: bool = False
+    # Also automatic when left out: reliability from the carrier's history, weather from the forecast for the
+    # arrival day, vessel delay from the vessel named on the booking confirmation.
+    carrier_reliability: float | None = Field(None, ge=0, le=1)
+    weather_severity: int | None = Field(None, ge=0, le=3)
+    vessel_delay: bool | None = None
 
 
 class DisruptionRequest(BaseModel):
