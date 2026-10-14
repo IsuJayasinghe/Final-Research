@@ -311,3 +311,99 @@ def test_without_a_customs_document_customs_risk_stays_unknown(svc, sample_dir):
     out = svc.submit_documents(aid)
     assert out["after"]["customs_risk"] is None and out["customs_assessment"] is None
     assert svc.repo.get(aid).customs_risk_flag is None and out["missing"] == 6
+
+
+# ---- weather, carrier reliability and vessel delay are automatic ---------------------------------------
+
+import weather as weather_module  # noqa: E402
+
+
+def bare_booking(svc, i=1, **kw):
+    """A booking with only what a person knows: who, what, when. Everything else must be derived."""
+    base = dict(
+        truck_id=f"TRK-{i}", container_id="CSQU3054383", carrier="Carrier-B", cargo_category="export",
+        container_type="hazardous", arrival_date=DATE, arrival_hour=10,
+    )
+    base.update(kw)
+    return svc.create(base, now=EARLY)
+
+
+def test_carrier_reliability_comes_from_the_carriers_history(svc):
+    b = bare_booking(svc)
+    j = bare_booking(svc, i=2, carrier="Carrier-J")
+    assert 0.45 < b["appointment"]["carrier_reliability"] < 0.6  # the unreliable carrier
+    assert j["appointment"]["carrier_reliability"] > 0.8
+    assert b["conditions"]["carrier"]["past_no_show_rate"] > j["conditions"]["carrier"]["past_no_show_rate"]
+    assert b["appointment"]["p_no_show"] > j["appointment"]["p_no_show"]
+    # an explicit value still wins (simulations / what-if)
+    assert bare_booking(svc, i=3, carrier_reliability=0.9)["appointment"]["carrier_reliability"] == 0.9
+
+
+def test_weather_comes_from_the_forecast(svc, monkeypatch):
+    seen = []
+
+    def forecast(day):
+        seen.append(day)
+        return {"date": day, "severity": 2, "label": "Heavy rain", "source": "open-meteo"}
+
+    monkeypatch.setattr(weather_module, "get_weather", forecast)
+    out = bare_booking(svc)
+    assert seen == [DATE]
+    assert out["appointment"]["weather_severity"] == 2 and out["appointment"]["weather_source"] == "open-meteo"
+    assert out["conditions"]["weather"]["label"] == "Heavy rain" and out["risk"]["weather_known"] is True
+
+
+def test_stormier_forecast_means_higher_no_show_risk(svc, monkeypatch):
+    risks = {}
+    for severity in (0, 3):
+        monkeypatch.setattr(weather_module, "get_weather",
+                            lambda day, s=severity: {"date": day, "severity": s, "label": "x", "source": "open-meteo"})
+        risks[severity] = bare_booking(svc, i=severity + 1)["appointment"]["p_no_show"]
+    assert risks[0] < risks[3]
+
+
+def test_unavailable_forecast_is_unknown_and_says_so(svc):
+    out = bare_booking(svc)  # conftest makes the weather API unreachable
+    a = out["appointment"]
+    assert a["weather_severity"] is None and a["weather_source"] in ("unavailable", "beyond-forecast-range")
+    assert out["risk"]["weather_known"] is False and "weather forecast unavailable" in a["risk_summary"].lower()
+
+
+def test_entered_weather_is_still_accepted_and_labelled(svc):
+    out = bare_booking(svc, weather_severity=1)
+    assert out["appointment"]["weather_severity"] == 1 and out["appointment"]["weather_source"] == "entered"
+
+
+@ocr_needed
+@pytest.mark.parametrize("booking_doc,delayed,hours", [("booking_confirmation", False, 0.0), ("booking_confirmation_delayed_vessel", True, 5.0)])
+def test_vessel_delay_is_read_from_the_booking_confirmation(svc, sample_dir, booking_doc, delayed, hours):
+    aid = bare_booking(svc)["appointment"]["id"]
+    assert svc.repo.get(aid).vessel_delay is None  # unknown until the booking confirmation is read
+    for name, slot in SLOTS.items():
+        upload(svc, sample_dir, aid, booking_doc if slot == "booking_confirmation" else name, slot)
+    out = svc.submit_documents(aid)
+    a = svc.repo.get(aid)
+    assert out["before"]["vessel_delay"] is None and out["after"]["vessel_delay"] is delayed
+    assert a.vessel_delay is delayed and a.vessel_delay_hours == hours
+    assert a.vessel_name == ("MV OCEAN PIONEER" if delayed else "MV EVER GRACE")
+    assert out["vessel"]["source"].startswith("simulated")
+    assert (f"delayed {hours:g} h" in out["summary"]) if delayed else ("on schedule" in out["summary"])
+
+
+@ocr_needed
+def test_a_delayed_vessel_raises_no_show_risk(svc, sample_dir):
+    risks = {}
+    for i, doc in enumerate(("booking_confirmation", "booking_confirmation_delayed_vessel"), start=1):
+        aid = bare_booking(svc, i=i)["appointment"]["id"]
+        for name, slot in SLOTS.items():
+            upload(svc, sample_dir, aid, doc if slot == "booking_confirmation" else name, slot)
+        risks[doc] = svc.submit_documents(aid)["after"]["p_no_show"]
+    assert risks["booking_confirmation"] < risks["booking_confirmation_delayed_vessel"]
+
+
+@ocr_needed
+def test_vessel_stays_unknown_without_a_booking_confirmation(svc, sample_dir):
+    aid = bare_booking(svc)["appointment"]["id"]
+    upload(svc, sample_dir, aid, "vgm", "vgm")
+    out = svc.submit_documents(aid)
+    assert out["vessel"] is None and svc.repo.get(aid).vessel_delay is None
