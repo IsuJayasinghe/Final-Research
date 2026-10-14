@@ -43,8 +43,11 @@ class Appointment:
     overbooked: bool = False
     decision_reason: str = ""
     risk_summary: str = ""
-    weather_severity: int = 0
-    vessel_delay: bool = False
+    weather_severity: int | None = None  # None = forecast not available yet
+    vessel_delay: bool | None = None  # None until the linked vessel is read from the booking confirmation
+    vessel_name: str | None = None
+    vessel_delay_hours: float | None = None
+    weather_source: str | None = None
     id: int | None = None
     created_at: datetime = field(default_factory=datetime.now)
 
@@ -133,7 +136,7 @@ class PostgresRepository:
         "requested_arrival, assigned_arrival, gate_id, appointment_status, customs_risk_flag, "
         "missing_documents_count, carrier_reliability_score, no_show_probability, late_probability, "
         "predicted_clearance_minutes, overbooked, decision_reason, risk_summary, created_at, "
-        "weather_severity, vessel_delay"
+        "weather_severity, vessel_delay, vessel_name, vessel_delay_hours, weather_source"
     )
 
     def __init__(self, url: str):
@@ -176,8 +179,11 @@ class PostgresRepository:
             overbooked=bool(r["overbooked"]),
             decision_reason=r["decision_reason"] or "",
             risk_summary=r["risk_summary"] or "",
-            weather_severity=r["weather_severity"] or 0,
-            vessel_delay=bool(r["vessel_delay"]),
+            weather_severity=r["weather_severity"],
+            vessel_delay=r["vessel_delay"],
+            vessel_name=r["vessel_name"],
+            vessel_delay_hours=float(r["vessel_delay_hours"]) if r["vessel_delay_hours"] is not None else None,
+            weather_source=r["weather_source"],
             created_at=r["created_at"],
         )
 
@@ -194,15 +200,16 @@ class PostgresRepository:
                 "container_type, cargo_category, requested_arrival, assigned_arrival, gate_id, "
                 "appointment_status, customs_risk_flag, missing_documents_count, carrier_reliability_score, "
                 "no_show_probability, late_probability, predicted_clearance_minutes, overbooked, "
-                "decision_reason, risk_summary, created_at, weather_severity, vessel_delay) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "decision_reason, risk_summary, created_at, weather_severity, vessel_delay, vessel_name, "
+                "vessel_delay_hours, weather_source) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
                 "RETURNING appointment_id",
                 (
                     a.truck_id, a.container_id, a.carrier, a.container_type, a.cargo_category,
                     a.requested_slot, a.assigned_slot, f"GATE-{a.lane}" if a.lane else None, a.status,
                     a.customs_risk_flag, a.missing_documents, a.carrier_reliability, a.p_no_show, a.p_late,
                     a.predicted_clearance_minutes, a.overbooked, a.decision_reason, a.risk_summary, a.created_at,
-                    a.weather_severity, a.vessel_delay,
+                    a.weather_severity, a.vessel_delay, a.vessel_name, a.vessel_delay_hours, a.weather_source,
                 ),
             ).fetchone()
         a.id = row["appointment_id"]

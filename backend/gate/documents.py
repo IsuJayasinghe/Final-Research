@@ -280,6 +280,14 @@ def extract_fields(text: str) -> dict:
     if m:
         fields["licence_no"] = m.group(1)
 
+    m = re.search(r"VESSEL(?:\s*NAME)?\s*[:\-]\s*([A-Z][A-Z0-9 .\-]{2,40}?)\s*(?:VOYAGE|VOY\b|\n|$)", upper)
+    if m:
+        fields["vessel_name"] = re.sub(r"\s+", " ", m.group(1)).strip(" .-")
+
+    m = re.search(r"VOYAGE\s*(?:NO\.?|NUMBER)?\s*[:\-]?\s*([A-Z0-9]{3,8})\b", upper)
+    if m:
+        fields["voyage"] = m.group(1)
+
     m = re.search(r"\bHS[\s\-]*(?:CODE)?[\s:\-]*(\d{4}(?:[.\s]?\d{2}){0,3})\b", upper)
     if m:
         digits = re.sub(r"\D", "", m.group(1))

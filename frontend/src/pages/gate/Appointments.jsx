@@ -282,6 +282,16 @@ export default function Appointments() {
                                   : `${r.missing_documents} missing or flagged`}
                                 {' · '}customs risk {r.customs_risk_flag ?? 'unknown'}
                               </p>
+                              <p className="mt-1 text-xs text-gray-500">
+                                Carrier reliability {Number(r.carrier_reliability).toFixed(2)} (history) · weather{' '}
+                                {r.weather_severity === null
+                                  ? 'unknown'
+                                  : `${['clear', 'light rain', 'heavy rain', 'storm'][r.weather_severity]} (${r.weather_source})`}
+                                {' · '}vessel{' '}
+                                {r.vessel_delay === null
+                                  ? 'not known yet'
+                                  : `${r.vessel_name ?? ''} ${r.vessel_delay ? `delayed ${r.vessel_delay_hours} h` : 'on schedule'}`}
+                              </p>
                             </div>
                             <div>
                               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">

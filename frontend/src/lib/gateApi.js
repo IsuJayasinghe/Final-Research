@@ -48,12 +48,10 @@ export function createAppointment(form) {
     carrier: form.carrier,
     cargo_category: form.cargoCategory,
     container_type: form.containerType,
-    // customs risk and missing documents are established later by reading the documents with OCR
-    carrier_reliability: Number(form.carrierReliability),
+    // Nothing else is sent: carrier reliability comes from the carrier's history, weather from the forecast, and
+    // customs risk, missing documents and the linked vessel's delay from OCR of the documents.
     arrival_date: form.preferredDate,
     arrival_hour: Number(form.arrivalHour),
-    weather_severity: Number(form.weatherSeverity),
-    vessel_delay: Boolean(form.vesselDelay),
   })
 }
 
@@ -91,6 +89,9 @@ export function checkDocument({ file, docKey, appointmentId, containerId, truckI
 
 export const getAppointmentDocuments = (id) => getJson(`/api/appointments/${id}/documents`)
 export const submitDocuments = (id) => postJson(`/api/appointments/${id}/documents/submit`)
+
+export const getCarriers = () => getJson('/api/carriers')
+export const getWeather = (date) => getJson(`/api/weather?date=${encodeURIComponent(date)}`)
 
 export const getModelMetrics = () => getJson('/api/model-metrics')
 

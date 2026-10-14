@@ -229,6 +229,10 @@ def main():
         .round(4)
         .to_dict("index")
     )
+    # average past reliability score per carrier, so the API can fill it in instead of asking the user
+    reliability = pd.concat([train, test]).groupby("carrier_company")["carrier_past_reliability_score"].mean().round(2)
+    for carrier, value in reliability.items():
+        history[carrier]["reliability"] = float(value)
 
     joblib.dump(
         {

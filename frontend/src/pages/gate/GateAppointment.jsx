@@ -12,9 +12,15 @@ import {
   Snowflake,
   Truck,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { cancelAppointment, confirmAppointment, createAppointment } from '../../lib/gateApi'
+import {
+  cancelAppointment,
+  confirmAppointment,
+  createAppointment,
+  getCarriers,
+  getWeather,
+} from '../../lib/gateApi'
 
 const CONTAINER_TYPES = [
   { value: 'standard', label: 'Standard', icon: Package },
@@ -23,20 +29,10 @@ const CONTAINER_TYPES = [
   { value: 'oversized', label: 'Oversized', icon: Truck },
 ]
 
-// Typical past reliability per carrier (averages from the training data). In production
-// this comes from the carrier's booking history; here it pre-fills an editable field.
-const CARRIER_RELIABILITY = {
-  'Carrier-A': 0.75, 'Carrier-B': 0.54, 'Carrier-C': 0.69, 'Carrier-D': 0.79, 'Carrier-E': 0.79,
-  'Carrier-F': 0.71, 'Carrier-G': 0.81, 'Carrier-H': 0.71, 'Carrier-I': 0.84, 'Carrier-J': 0.87,
-}
-const CARRIERS = Object.keys(CARRIER_RELIABILITY)
-
-const WEATHER = [
-  { value: 0, label: '0 - Clear' },
-  { value: 1, label: '1 - Light rain' },
-  { value: 2, label: '2 - Heavy rain' },
-  { value: 3, label: '3 - Storm' },
-]
+// Shown until the carrier profiles (reliability, past no-show rate) load from the API.
+const FALLBACK_CARRIERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'].map((l) => ({
+  carrier: `Carrier-${l}`,
+}))
 
 const HOURS = Array.from({ length: 24 }, (_, h) => ({
   value: h,
@@ -100,15 +96,14 @@ export default function GateAppointment() {
   const [form, setForm] = useState({
     truckId: '',
     containerId: '',
-    carrier: CARRIERS[0],
+    carrier: FALLBACK_CARRIERS[0].carrier,
     cargoCategory: 'export',
     containerType: 'standard',
     preferredDate: tomorrowDate(),
     arrivalHour: 9,
-    carrierReliability: CARRIER_RELIABILITY[CARRIERS[0]],
-    weatherSeverity: 0,
-    vesselDelay: false,
   })
+  const [carriers, setCarriers] = useState(FALLBACK_CARRIERS)
+  const [forecast, setForecast] = useState(null) // weather forecast for the chosen arrival date
   const [status, setStatus] = useState('idle') // idle | assigning | assigned | error
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
@@ -118,10 +113,26 @@ export default function GateAppointment() {
   const updateField = (field) => (e) =>
     setForm((prev) => ({ ...prev, [field]: e.target.value }))
 
-  const updateCarrier = (e) => {
-    const carrier = e.target.value
-    setForm((prev) => ({ ...prev, carrier, carrierReliability: CARRIER_RELIABILITY[carrier] }))
-  }
+  // carrier profiles (reliability and past no-show rate) come from the model's history
+  useEffect(() => {
+    getCarriers()
+      .then(setCarriers)
+      .catch(() => {})
+  }, [])
+
+  // the weather forecast for the arrival day is fetched, not typed
+  useEffect(() => {
+    let cancelled = false
+    setForecast(null)
+    getWeather(form.preferredDate)
+      .then((w) => !cancelled && setForecast(w))
+      .catch(() => !cancelled && setForecast({ severity: null, source: 'unavailable' }))
+    return () => {
+      cancelled = true
+    }
+  }, [form.preferredDate])
+
+  const profile = carriers.find((c) => c.carrier === form.carrier)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -203,13 +214,19 @@ export default function GateAppointment() {
           <label htmlFor="carrier" className="block text-sm font-medium text-gray-700">
             Carrier Company
           </label>
-          <select id="carrier" value={form.carrier} onChange={updateCarrier} className={INPUT_CLASS}>
-            {CARRIERS.map((c) => (
-              <option key={c} value={c}>
-                {c}
+          <select id="carrier" value={form.carrier} onChange={updateField('carrier')} className={INPUT_CLASS}>
+            {carriers.map((c) => (
+              <option key={c.carrier} value={c.carrier}>
+                {c.carrier}
               </option>
             ))}
           </select>
+          {profile?.reliability != null && (
+            <p className="mt-1 text-xs text-gray-500">
+              From history: reliability <b>{profile.reliability.toFixed(2)}</b> · past no-show rate{' '}
+              <b>{(profile.past_no_show_rate * 100).toFixed(1)}%</b>
+            </p>
+          )}
         </div>
 
         <div>
@@ -286,63 +303,28 @@ export default function GateAppointment() {
           </select>
         </div>
 
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700 sm:col-span-2">
+          <span className="font-semibold text-[#123a5c]">Weather forecast for your arrival day: </span>
+          {forecast === null ? (
+            'loading...'
+          ) : forecast.severity === null ? (
+            <>
+              not available for this date. The seasonal typical weather will be assumed.
+            </>
+          ) : (
+            <>
+              <b>{forecast.label}</b>
+              {forecast.precipitation_mm != null && <> ({forecast.precipitation_mm} mm rain expected)</>} - from the
+              Open-Meteo forecast for the port.
+            </>
+          )}
+        </div>
+
         <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-900 sm:col-span-2">
-          <b>Customs risk and missing documents are not typed in.</b> They are worked out after booking by
-          reading your uploaded documents with OCR. Until then the risk estimate assumes a typical document
-          situation, and it is firmed up once your documents are checked.
-        </div>
-
-        <div>
-          <label htmlFor="weatherSeverity" className="block text-sm font-medium text-gray-700">
-            Weather on Arrival Day
-          </label>
-          <select
-            id="weatherSeverity"
-            value={form.weatherSeverity}
-            onChange={updateField('weatherSeverity')}
-            className={INPUT_CLASS}
-          >
-            {WEATHER.map((w) => (
-              <option key={w.value} value={w.value}>
-                {w.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex items-end">
-          <label className="flex cursor-pointer items-center gap-2 pb-2 text-sm text-gray-700">
-            <input
-              type="checkbox"
-              checked={form.vesselDelay}
-              onChange={(e) => setForm((prev) => ({ ...prev, vesselDelay: e.target.checked }))}
-              className="h-4 w-4 accent-[#123a5c]"
-            />
-            Linked vessel is delayed
-          </label>
-        </div>
-
-        <div className="sm:col-span-2">
-          <label htmlFor="carrierReliability" className="block text-sm font-medium text-gray-700">
-            Carrier Past Reliability:{' '}
-            <span className="font-semibold text-[#123a5c]">
-              {Number(form.carrierReliability).toFixed(2)}
-            </span>
-          </label>
-          <input
-            id="carrierReliability"
-            type="range"
-            min="0.5"
-            max="1"
-            step="0.01"
-            value={form.carrierReliability}
-            onChange={updateField('carrierReliability')}
-            className="mt-2 w-full accent-[#123a5c]"
-          />
-          <p className="mt-1 text-xs text-gray-500">
-            Weather and reliability are entered here for the demo; in production they come from forecasts
-            and the carrier&apos;s booking history.
-          </p>
+          <b>Nothing else is typed in.</b> Carrier reliability comes from the carrier&apos;s history, weather from the
+          forecast, and the customs risk, missing documents and linked-vessel delay are read from your documents
+          with OCR after booking. Until then the risk estimate assumes the typical situation and is firmed up once
+          your documents are checked.
         </div>
 
         <div className="sm:col-span-2">
@@ -413,11 +395,40 @@ export default function GateAppointment() {
             </div>
           )}
 
+          <div className="mt-4 grid gap-2 text-xs sm:grid-cols-3">
+            <div className="rounded-md border border-gray-200 bg-white p-2">
+              <p className="text-gray-500">Carrier reliability (from history)</p>
+              <p className="font-semibold text-gray-800">
+                {result.conditions.carrier.reliability_used.toFixed(2)}
+                {result.conditions.carrier.past_no_show_rate != null && (
+                  <span className="font-normal text-gray-500">
+                    {' '}
+                    · past no-show {(result.conditions.carrier.past_no_show_rate * 100).toFixed(1)}%
+                  </span>
+                )}
+              </p>
+            </div>
+            <div className="rounded-md border border-gray-200 bg-white p-2">
+              <p className="text-gray-500">Weather on arrival day</p>
+              <p className="font-semibold text-gray-800">
+                {result.conditions.weather.severity === null
+                  ? 'forecast unavailable (typical assumed)'
+                  : `${result.conditions.weather.label} (${result.conditions.weather.source})`}
+              </p>
+            </div>
+            <div className="rounded-md border border-gray-200 bg-white p-2">
+              <p className="text-gray-500">Linked vessel delay</p>
+              <p className="font-semibold text-gray-800">
+                {result.risk.vessel_known ? 'known' : 'not known yet (read from the booking confirmation)'}
+              </p>
+            </div>
+          </div>
+
           {!result.risk.documents_known && (
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-900">
               <span>
-                <b>Documents not checked yet.</b> This estimate assumes a typical document situation. Upload
-                your documents to firm up the risk and the clearance time.
+                <b>Documents not checked yet.</b> This estimate assumes a typical document situation and vessel
+                delay. Upload your documents to firm up the risk and the clearance time.
               </span>
               <Link
                 to="/document-upload"

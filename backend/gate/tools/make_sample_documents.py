@@ -78,13 +78,18 @@ def blur_and_noise(img: Image.Image, path: Path) -> None:
 def main(out: Path) -> None:
     out.mkdir(parents=True, exist_ok=True)
 
-    render("BOOKING CONFIRMATION", [
-        "Booking No: BKG-77201944",
-        f"Container No: {CONTAINER}",
-        "Vessel: MV EVER GRACE   Voyage: 042E",
-        "Port of Loading: Colombo   Port of Discharge: Singapore",
-        f"ETD: {APPT_DATE}   Shipper: Lanka Exports Ltd",
-    ], out / "booking_confirmation.png", "Sri Lanka Ports Authority - Terminal Booking")
+    def booking(name: str, vessel: str, voyage: str) -> None:
+        render("BOOKING CONFIRMATION", [
+            "Booking No: BKG-77201944",
+            f"Container No: {CONTAINER}",
+            f"Vessel: {vessel}   Voyage: {voyage}",
+            "Port of Loading: Colombo   Port of Discharge: Singapore",
+            f"ETD: {APPT_DATE}   Shipper: Lanka Exports Ltd",
+        ], out / f"{name}.png", "Sri Lanka Ports Authority - Terminal Booking")
+
+    # the vessel name is read by OCR and looked up in the vessel schedule: on time vs delayed 5 hours
+    booking("booking_confirmation", "MV EVER GRACE", "042E")
+    booking("booking_confirmation_delayed_vessel", "MV OCEAN PIONEER", "17W")
 
     def cusdec(name: str, goods: str | None, hs: str | None, declaration: bool = True) -> None:
         lines = []

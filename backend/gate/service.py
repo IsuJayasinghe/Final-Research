@@ -20,6 +20,8 @@ import documents
 import ml_models
 import noshow
 import scheduler
+import vessels
+import weather
 from repository import ACTIVE_STATUSES, Appointment
 from scheduler import BookingState, Disruption
 
@@ -97,8 +99,30 @@ class GateService:
             raise BookingError("Planned arrival must be in the future (next full hour or later).")
 
         lead_hours = (requested - now).total_seconds() / 3600
-        # Customs risk and missing documents are normally unknown at booking (None): they are established
-        # later by reading the documents with OCR. Callers may still pass known values explicitly.
+
+        # Nothing below is typed in by the user. Carrier reliability comes from the carrier's history; weather
+        # from the forecast for the arrival day; customs risk and missing documents from OCR of the documents,
+        # and the vessel delay from the vessel named on the booking confirmation. Anything not yet known is
+        # None and the risk model averages over the typical situation. Callers (tests, simulations) may still
+        # pass known values explicitly.
+        profile = noshow.carrier_profile(req["carrier"])
+        reliability = req.get("carrier_reliability")
+        if reliability is None:
+            reliability = profile["reliability"] if profile else noshow.DEFAULT_RELIABILITY
+
+        weather_severity = req.get("weather_severity")
+        if weather_severity is None:
+            weather_info = weather.get_weather(requested.strftime("%Y-%m-%d"))
+            weather_severity = weather_info["severity"]
+        else:
+            weather_info = {
+                "date": requested.strftime("%Y-%m-%d"),
+                "severity": weather_severity,
+                "label": weather.LABELS[weather_severity],
+                "source": "entered",
+            }
+        vessel_delay = req.get("vessel_delay")
+
         risk = noshow.predict_risk_for_documents(
             req.get("customs_risk_flag"),
             req.get("missing_documents"),
@@ -106,10 +130,10 @@ class GateService:
             carrier=req["carrier"],
             container_type=req["container_type"],
             cargo_category=req["cargo_category"],
-            carrier_reliability=req["carrier_reliability"],
+            carrier_reliability=reliability,
             lead_time_hours=lead_hours,
-            weather_severity=req.get("weather_severity", 0),
-            vessel_delay=req.get("vessel_delay", False),
+            weather_severity=weather_severity,
+            vessel_delay=vessel_delay,
         )
 
         states = [_to_state(a) for a in self.repo.list(ACTIVE_STATUSES)]
@@ -126,14 +150,15 @@ class GateService:
             status=decision.status,
             customs_risk_flag=req.get("customs_risk_flag"),
             missing_documents=req.get("missing_documents"),
-            carrier_reliability=req["carrier_reliability"],
+            carrier_reliability=reliability,
             p_no_show=risk["p_no_show"],
             p_late=risk["p_late"],
             overbooked=decision.overbooked,
             decision_reason=decision.reason,
             risk_summary=risk["summary"],
-            weather_severity=req.get("weather_severity", 0),
-            vessel_delay=req.get("vessel_delay", False),
+            weather_severity=weather_severity,
+            weather_source=weather_info["source"],
+            vessel_delay=vessel_delay,
         )
         lanes = []
         wait = gate_entry = departure = None
@@ -157,6 +182,11 @@ class GateService:
         return {
             "appointment": a.to_dict(),
             "risk": risk,
+            "conditions": {
+                "weather": weather_info,
+                "carrier": {**(profile or {"carrier": req["carrier"]}), "reliability_used": reliability},
+                "vessel": {"known": vessel_delay is not None},
+            },
             "decision": {
                 "overbooked": decision.overbooked,
                 "reason": decision.reason,
@@ -205,9 +235,11 @@ class GateService:
         self._require(appointment_id)
         return self._doc_results.get(appointment_id, {})
 
-    def _rescore(self, a: Appointment, missing: int | None, customs: str | None) -> tuple[dict, float | None]:
-        """No-show risk and clearance time for this booking given what is known about its documents
-        (None = not known yet, so the typical situation is assumed)."""
+    def _rescore(
+        self, a: Appointment, missing: int | None, customs: str | None, vessel_delay: bool | None
+    ) -> tuple[dict, float | None]:
+        """No-show risk and clearance time for this booking given what is known about its documents and
+        linked vessel (None = not known yet, so the typical situation is assumed)."""
         lead = max(1.0, (a.requested_slot - datetime.now()).total_seconds() / 3600)
         risk = noshow.predict_risk_for_documents(
             customs,
@@ -219,7 +251,7 @@ class GateService:
             carrier_reliability=a.carrier_reliability,
             lead_time_hours=lead,
             weather_severity=a.weather_severity,
-            vessel_delay=a.vessel_delay,
+            vessel_delay=vessel_delay,
         )
         clearance = None
         if a.assigned_slot:
@@ -249,14 +281,38 @@ class GateService:
         assessment = cusdec.get("customs_assessment") if cusdec else None
         new_customs = assessment["level"] if assessment else old_customs  # unknown stays unknown
 
-        before_risk, before_clearance = self._rescore(a, old_missing, old_customs)
-        after_risk, after_clearance = self._rescore(a, missing, new_customs)
+        # the linked vessel is named on the booking confirmation; its schedule gives the delay
+        old_vessel = a.vessel_delay
+        confirmation = results.get("booking_confirmation")
+        vessel_name = (confirmation or {}).get("fields", {}).get("vessel_name")
+        vessel_info = None
+        if vessel_name:
+            vessel_info = vessels.get_vessel_delay(vessel_name, (a.assigned_slot or a.requested_slot).strftime("%Y-%m-%d"))
+        new_vessel = vessel_info["delayed"] if vessel_info and vessel_info["delayed"] is not None else old_vessel
+
+        before_risk, before_clearance = self._rescore(a, old_missing, old_customs, old_vessel)
+        after_risk, after_clearance = self._rescore(a, missing, new_customs, new_vessel)
         summary = f"{len(cleared)} of {len(required)} required documents cleared; {missing} missing or flagged."
         if assessment:
             summary += f" Customs risk from the declaration: {assessment['level']}."
+        if vessel_info and vessel_info["delayed"] is not None:
+            hours = vessel_info["delay_hours"]
+            summary += (
+                f" Vessel {vessel_info['vessel']} is delayed {hours:g} h."
+                if vessel_info["delayed"]
+                else f" Vessel {vessel_info['vessel']} is on schedule."
+            )
 
+        vessel_updates = {}
+        if vessel_info and vessel_info["delayed"] is not None:
+            vessel_updates = {
+                "vessel_delay": new_vessel,
+                "vessel_name": vessel_info["vessel"],
+                "vessel_delay_hours": vessel_info["delay_hours"],
+            }
         self.repo.update(
             a.id,
+            **vessel_updates,
             missing_documents=missing,
             customs_risk_flag=new_customs,
             p_no_show=after_risk["p_no_show"],
@@ -305,16 +361,19 @@ class GateService:
             "before": {
                 "missing_documents": old_missing,
                 "customs_risk": old_customs,
+                "vessel_delay": old_vessel,
                 "p_no_show": before_p,
                 "clearance_minutes": before_clearance,
             },
             "after": {
                 "missing_documents": missing,
                 "customs_risk": new_customs,
+                "vessel_delay": new_vessel,
                 "p_no_show": after_p,
                 "clearance_minutes": after_clearance,
             },
             "customs_assessment": assessment,
+            "vessel": vessel_info,
             "drivers": after_risk["drivers"],
             "issues": issues,
         }
