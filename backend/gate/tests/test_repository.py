@@ -123,3 +123,17 @@ def test_unchecked_documents_stay_unknown_not_zero(repo):
     repo.update(saved.id, customs_risk_flag="medium", missing_documents=1)
     got = repo.get(saved.id)
     assert got.customs_risk_flag == "medium" and got.missing_documents == 1
+
+
+def test_conditions_can_be_unknown_and_vessel_details_round_trip(repo):
+    saved = repo.add(make(weather_severity=None, vessel_delay=None))
+    got = repo.get(saved.id)
+    assert got.weather_severity is None and got.vessel_delay is None and got.vessel_name is None
+    repo.update(saved.id, weather_severity=2, weather_source="open-meteo", vessel_delay=True,
+                vessel_name="MV OCEAN PIONEER", vessel_delay_hours=5.0)
+    got = repo.get(saved.id)
+    assert got.weather_severity == 2 and got.weather_source == "open-meteo" and got.vessel_delay is True
+    assert got.vessel_name == "MV OCEAN PIONEER" and got.vessel_delay_hours == 5.0
+    # False is a real answer ("on time"), different from unknown
+    repo.update(saved.id, vessel_delay=False)
+    assert repo.get(saved.id).vessel_delay is False
