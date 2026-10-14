@@ -182,7 +182,9 @@ def sample_dir(tmp_path_factory):
     from tools import make_sample_documents as gen
 
     out = tmp_path_factory.mktemp("docs")
-    gen.main(out)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(gen, "APPT_DATE", DATE)  # documents are dated for the appointment they are checked against
+        gen.main(out)
     return out
 
 
@@ -407,3 +409,20 @@ def test_vessel_stays_unknown_without_a_booking_confirmation(svc, sample_dir):
     upload(svc, sample_dir, aid, "vgm", "vgm")
     out = svc.submit_documents(aid)
     assert out["vessel"] is None and svc.repo.get(aid).vessel_delay is None
+
+
+@ocr_needed
+def test_submit_reports_how_complete_each_document_is(svc, sample_dir):
+    aid = bare_booking(svc, truck_id="TRK-80579")["appointment"]["id"]  # the truck named on the sample gate pass
+    for name, slot in SLOTS.items():
+        upload(svc, sample_dir, aid, "booking_confirmation_incomplete" if slot == "booking_confirmation" else name, slot)
+    out = svc.submit_documents(aid)
+    by_key = {r["doc_key"]: r for r in out["required"]}
+    assert by_key["booking_confirmation"]["status"] == "flagged"
+    assert 0 < by_key["booking_confirmation"]["completeness"] < 1
+    assert {"Voyage number", "Port of discharge"} <= set(by_key["booking_confirmation"]["missing_details"])
+    assert by_key["vgm"]["completeness"] == 1.0 and by_key["vgm"]["missing_details"] == []
+    flagged = {k: (r["status"], r["missing_details"]) for k, r in by_key.items() if r["status"] != "cleared"}
+    assert out["missing"] == 1, flagged  # only the incomplete booking confirmation fails
+    stored = __import__("json").loads(svc.repo.submissions(aid)[0]["clearance_information"])
+    assert stored["completeness"]["vgm"] == 1.0 and "booking_confirmation" in stored["missing_details"]

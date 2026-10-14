@@ -26,7 +26,9 @@ def sample_dir(tmp_path_factory):
     from tools import make_sample_documents as gen
 
     out = tmp_path_factory.mktemp("api_docs")
-    gen.main(out)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(gen, "APPT_DATE", "2031-03-10")  # the date of the booking made in the full-flow test
+        gen.main(out)
     return out
 
 
@@ -124,3 +126,24 @@ def test_booking_over_http_needs_no_conditions_typed_in(client):
     a = r.json()["appointment"]
     assert 0.45 < a["carrier_reliability"] < 0.6 and a["customs_risk_flag"] is None and a["vessel_delay"] is None
     assert r.json()["conditions"]["carrier"]["reliability_used"] == a["carrier_reliability"]
+
+
+def test_templates_endpoint_lists_what_each_document_must_contain(client):
+    out = client.get("/api/documents/templates?container_type=hazardous").json()
+    assert len(out) == 7 and all(t["needed"] for t in out)
+    cargo = next(t for t in out if t["doc_key"] == "special_cargo")
+    assert {"un_number", "imdg_class", "packing_group"} <= {f["key"] for f in cargo["fields"] if f["required"]}
+    standard = client.get("/api/documents/templates?container_type=standard").json()
+    assert next(t for t in standard if t["doc_key"] == "special_cargo")["needed"] is False
+    reefer = next(t for t in client.get("/api/documents/templates?container_type=reefer").json() if t["doc_key"] == "special_cargo")
+    assert "temperature_c" in {f["key"] for f in reefer["fields"]}
+
+
+def test_upload_returns_the_template_checklist_over_http(client, sample_dir):
+    r = post_doc(client, sample_dir, "vgm", "vgm", expected_container_id="CSQU3054383", container_type="hazardous")
+    t = r.json()["template"]
+    assert t["complete"] and t["required_ok"] == t["required_total"] == 4
+    assert {f["key"] for f in t["fields"]} >= {"container_numbers", "weight_kg", "method", "dates"}
+    bad = post_doc(client, sample_dir, "booking_confirmation_incomplete", "booking_confirmation", expected_container_id="CSQU3054383")
+    body = bad.json()
+    assert body["status"] == "flagged" and "Voyage number" in body["template"]["missing"]
