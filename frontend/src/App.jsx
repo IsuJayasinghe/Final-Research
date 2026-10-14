@@ -3,6 +3,7 @@ import Footer from './components/Footer'
 import Navbar from './components/Navbar'
 import Appointments from './pages/gate/Appointments'
 import Approvals from './pages/gate/Approvals'
+import GateDesk from './pages/gate/GateDesk'
 import DocumentUpload from './pages/gate/DocumentUpload'
 import GateAllocationView from './pages/gate/GateAllocationView'
 import GateAppointment from './pages/gate/GateAppointment'
@@ -22,6 +23,7 @@ function App() {
           <Route path="/gate-appointment" element={<GateAppointment />} />
           <Route path="/appointments" element={<AdminOnly><Appointments /></AdminOnly>} />
           <Route path="/admin/approvals" element={<AdminOnly><Approvals /></AdminOnly>} />
+          <Route path="/admin/gate-desk" element={<AdminOnly><GateDesk /></AdminOnly>} />
           <Route path="/my-trip" element={<MyTrip />} />
           <Route path="/gate-optimization" element={<AdminOnly><Optimization /></AdminOnly>} />
           <Route path="/model-results" element={<AdminOnly><ModelResults /></AdminOnly>} />

@@ -34,7 +34,7 @@ DEVIATION_PENALTY_MIN_PER_HOUR = 12.0  # cost of being moved away from the reque
 MOVE_PENALTY_MIN = 4.0  # stability: prefer not to move a booking at all
 UNASSIGNED_COST = 1000.0
 
-ACTIVE_STATUSES = ("PENDING", "CONFIRMED")
+ACTIVE_STATUSES = ("PENDING", "CONFIRMED", "ARRIVED")
 
 WaitFn = Callable[[datetime], float]
 

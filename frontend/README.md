@@ -14,6 +14,7 @@ Driver journey: check the gate -> request an appointment -> wait for approval ->
 | `/my-trip` | driver | Stepper (request, approved, documents, gate day), live gate/queue/expected entry, delay and gate-change updates with reasons; refreshes every 10 s | `GET /api/appointments?truck_id=`, `/{id}/live`, `/{id}/notifications` |
 | `/document-upload` | driver | Locked until the gate admin approves. Then upload each required document; each is OCR-checked against the booking and its template, and submitting re-scores risk | `POST /api/documents/check`, `/appointments/{id}/documents/submit` |
 | `/admin/approvals` | admin | Pending requests with risk and hour load; approve, reject with reason, approve all low-risk | `POST /api/appointments/{id}/approve`, `/reject` |
+| `/admin/gate-desk` | admin | Gate officer picks one of the 6 gates (remembered) and a date: that gate's approved trucks in slot order, counts, queue, closures; Check in, Complete gate process, No-show; refreshes every 10 s | `GET /api/gates/{lane}/desk`, `POST /api/appointments/{id}/check-in`, `/complete`, `/no-show` |
 | `/appointments` | admin | All requests, filters, decision history | `GET /api/appointments`, `/events` |
 | `/gate-optimization` | admin | Hourly slot board; inject a vessel delay / queue spike on the whole gate or one lane; shows gate changes and driver notices | `GET /api/slots`, `POST /api/reoptimize` |
 | `/model-results` | admin | Model 1 / Model 2 / SHAP / framework evaluation | `GET /api/model-metrics` |

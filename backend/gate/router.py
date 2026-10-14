@@ -211,6 +211,30 @@ def cancel_appointment(appointment_id: int):
     return _run(service.get_service().cancel, appointment_id).to_dict()
 
 
+@router.post("/appointments/{appointment_id}/check-in")
+def check_in(appointment_id: int):
+    """Gate officer: the truck has reached its gate and the gate process starts."""
+    return _run(service.get_service().check_in, appointment_id).to_dict()
+
+
+@router.post("/appointments/{appointment_id}/complete")
+def complete_appointment(appointment_id: int):
+    """Gate officer: the gate process for this truck is complete."""
+    return _run(service.get_service().complete, appointment_id).to_dict()
+
+
+@router.post("/appointments/{appointment_id}/no-show")
+def no_show(appointment_id: int):
+    """Gate officer: the truck did not arrive; release its place."""
+    return _run(service.get_service().mark_no_show, appointment_id).to_dict()
+
+
+@router.get("/gates/{lane}/desk")
+def gate_desk(lane: int, date: str | None = None):
+    """One gate's work list for a day: bookings in slot order, their status and what to do next."""
+    return _run(service.get_service().gate_desk, lane, date)
+
+
 @router.get("/appointments/{appointment_id}/live")
 def appointment_live(appointment_id: int):
     """The driver's live view: status, gate and slot, the gate's current queue for that hour, delay and why."""

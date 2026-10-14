@@ -68,6 +68,10 @@ export const approveAppointment = (id) => postJson(`/api/appointments/${id}/appr
 export const rejectAppointment = (id, reason) => postJson(`/api/appointments/${id}/reject`, { reason })
 
 // the driver's live view of one appointment, and what they have been told
+export const checkInAppointment = (id) => postJson(`/api/appointments/${id}/check-in`)
+export const completeAppointment = (id) => postJson(`/api/appointments/${id}/complete`)
+export const markNoShow = (id) => postJson(`/api/appointments/${id}/no-show`)
+export const getGateDesk = (lane, date) => getJson(`/api/gates/${lane}/desk?date=${encodeURIComponent(date)}`)
 export const getLive = (id) => getJson(`/api/appointments/${id}/live`)
 export const getNotifications = (id) => getJson(`/api/appointments/${id}/notifications`)
 

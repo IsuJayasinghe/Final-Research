@@ -3,6 +3,7 @@ import {
   BarChart3,
   CalendarClock,
   ClipboardCheck,
+  DoorOpen,
   FileCheck2,
   ListChecks,
   MapPinned,
@@ -50,6 +51,13 @@ const ADMIN_CARDS = [
     title: 'Approvals',
     text: 'Review driver requests with their risk and the hour load. Approve or reject with a reason.',
     cta: 'Review requests',
+  },
+  {
+    to: '/admin/gate-desk',
+    icon: DoorOpen,
+    title: 'Gate Desk',
+    text: 'Pick your gate, see its approved trucks in slot order, check them in and complete the gate process.',
+    cta: 'Open my gate',
   },
   {
     to: '/gate-allocation',

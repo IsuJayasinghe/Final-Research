@@ -21,7 +21,11 @@ runs the component standalone.
 | GET | `/api/appointments/{id}/events` | Audit trail of assignments, moves and status changes |
 | POST | `/api/appointments/{id}/approve` (`/confirm` alias) | Gate admin approves a PENDING request; this unlocks document upload |
 | POST | `/api/appointments/{id}/reject` | Gate admin rejects with a reason `{reason}` |
-| POST | `/api/appointments/{id}/cancel` | Driver or admin cancels |
+| POST | `/api/appointments/{id}/cancel` | Driver or admin cancels (not once the truck is at the gate) |
+| GET | `/api/gates/{lane}/desk?date=` | One gate officer's work list: approved trucks on that gate in slot order, counts, queue, closures |
+| POST | `/api/appointments/{id}/check-in` | Officer: truck reached the gate (CONFIRMED -> ARRIVED) |
+| POST | `/api/appointments/{id}/complete` | Officer: gate process complete (ARRIVED or CONFIRMED -> COMPLETED), records how long it took |
+| POST | `/api/appointments/{id}/no-show` | Officer: truck never came (CONFIRMED -> NO_SHOW) |
 | GET | `/api/appointments/{id}/live` | Driver's live trip: phase, next step, gate, lane status, queue, expected entry/wait, delay and why |
 | GET | `/api/appointments/{id}/notifications` | Driver updates: approved/rejected, gate changed, delay update, documents checked |
 | POST / DELETE | `/api/lanes/{lane}/close` | Close a lane for `hours` with a reason (bookings move automatically) / reopen it |
@@ -49,7 +53,11 @@ runs the component standalone.
 2. A gate admin approves (**CONFIRMED**) or rejects (**REJECTED**, reason required). Until approved,
    `POST /api/appointments/{id}/documents/check` answers **409** - documents cannot be uploaded early.
 3. After approval the driver uploads documents; each is OCR-checked and the booking is re-scored on submit.
-4. Until the slot time the driver follows `/live` and `/notifications`. When a disruption, a lane closure or a
+4. On the day the gate officer opens the **Gate Desk**, chooses their gate, and for each truck presses *Check in* when it
+   arrives and *Complete gate process* when it is released (or *No-show*). The driver sees each step on My Trip.
+   A truck that has arrived still counts in its lane's queue and is never moved to another gate; completed and
+   no-show trucks free the lane.
+5. Until the slot time the driver follows `/live` and `/notifications`. When a disruption, a lane closure or a
    rebalance changes the expected wait by 5 min or more, or moves the truck to another gate, a notification with the
    reason is recorded (`DELAY_UPDATE` / `LANE_CHANGED`).
 
