@@ -26,6 +26,7 @@ from schemas import (
     ClearanceResponse,
     CongestionResponse,
     DisruptionRequest,
+    LaneCloseRequest,
     LaneCongestion,
     RejectRequest,
     ModelInputs,
@@ -208,6 +209,40 @@ def reject_appointment(appointment_id: int, body: RejectRequest):
 @router.post("/appointments/{appointment_id}/cancel")
 def cancel_appointment(appointment_id: int):
     return _run(service.get_service().cancel, appointment_id).to_dict()
+
+
+@router.get("/appointments/{appointment_id}/live")
+def appointment_live(appointment_id: int):
+    """The driver's live view: status, gate and slot, the gate's current queue for that hour, delay and why."""
+    return _run(service.get_service().live, appointment_id)
+
+
+@router.get("/appointments/{appointment_id}/notifications")
+def appointment_notifications(appointment_id: int):
+    """What the driver has been told (approval, gate or slot changes, delays), newest first."""
+    return _run(service.get_service().notifications, appointment_id)
+
+
+@router.post("/lanes/{lane}/close")
+def close_lane(lane: int, request: LaneCloseRequest):
+    """Gate admin takes a lane out of service; drivers booked on it are moved to another gate with a notification."""
+    return _run(service.get_service().close_lane, lane, request.hours, request.start, request.reason)
+
+
+@router.delete("/lanes/{lane}/close")
+def reopen_lane(lane: int):
+    return service.get_service().reopen_lane(lane)
+
+
+@router.get("/lanes/closures")
+def lane_closures():
+    return service.get_service().list_closures()
+
+
+@router.post("/rebalance")
+def rebalance_lanes():
+    """Re-check every upcoming booking and move drivers to a lighter lane where it is clearly better."""
+    return {"lane_changes": service.get_service().rebalance_lanes()}
 
 
 @router.post("/reoptimize")
