@@ -493,8 +493,8 @@ export default function DocumentUpload() {
             </p>
           )}
           <p className="mt-3 text-xs text-gray-600">
-            Document completeness feeds the no-show and clearance-time models, so a complete, readable
-            document set lowers both.
+            Document completeness and the customs risk read from the declaration feed the no-show and
+            clearance-time models: a complete, low-risk set lowers both; high-risk goods raise clearance time.
           </p>
           <Link to="/appointments" className="mt-3 inline-block text-sm font-medium text-[#123a5c] hover:underline">
             View appointment history
