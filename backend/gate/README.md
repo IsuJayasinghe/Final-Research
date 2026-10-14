@@ -32,6 +32,21 @@ runs the component standalone.
 | POST | `/api/predict-clearance` | Clearance-time model on its own |
 | GET | `/api/congestion?at=` | Per-lane forecast queue and wait for a chosen hour |
 
+## Customs risk and missing documents are derived, not typed
+A booking is created without them (`POST /api/appointments` leaves `customs_risk_flag` / `missing_documents` out;
+passing explicit values is still allowed for simulations). Until the documents are read:
+- the no-show and clearance predictions are the **average over the typical document situation** from the training
+  data (customs risk 72% low / 20% medium / 8% high; 75% / 15% / 7% / 3% for 0-3 missing documents), and
+  the explanation lists only drivers that are actually known;
+- the appointment stores both values as *unknown* (NULL), not as zero.
+
+On submitting the documents (below) the OCR verdicts fix both: **missing documents** = required documents that are not
+`cleared`, and **customs risk** = the CUSDEC's assessment (HS-chapter table: tobacco, alcohol, arms, explosives,
+precious goods and art are high; fuels, chemicals, pharmaceuticals, machinery, electrical equipment and vehicles are
+medium; other goods low; a missing HS code or declaration number raises the level). The table in
+`documents.py` is illustrative; a real deployment would use the customs authority's own risk profile.
+If no customs declaration was checked, customs risk stays unknown.
+
 ## OCR document checking (`documents.py`)
 Uploads are read with **RapidOCR** (ONNX, pip-only - no Tesseract install); digital PDFs use their text
 layer, scanned PDFs are rendered then OCR'd. Each file then goes through:
@@ -48,8 +63,9 @@ On **submit**, flagged or missing documents become the appointment's `missing_do
 clearance time are re-scored by the models, the extracted fields are saved to `gate.gate_submissions`, and the
 change is logged as a `DOCUMENTS_CHECKED` event. Files are processed in memory and never stored.
 
-Demo files: `python tools/make_sample_documents.py` writes good and faulty sample documents (git-ignored) for
-container `CSQU3054383`, truck `TRK-80579`.
+Demo files: `python tools/make_sample_documents.py [dir] [YYYY-MM-DD]` writes good and faulty sample documents
+(git-ignored, dated tomorrow by default) for container `CSQU3054383`, truck `TRK-80579`, including customs
+declarations of low, medium, high and incomplete risk (`cusdec*.png`).
 
 ## Storage
 By default bookings live in memory. To save them in the shared PostgreSQL database:
