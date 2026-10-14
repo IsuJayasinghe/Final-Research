@@ -20,6 +20,7 @@ const SOLUTIONS = {
   ],
   admin: [
     { label: 'Approvals', to: '/admin/approvals' },
+    { label: 'Gate Desk', to: '/admin/gate-desk' },
     { label: 'Gate Allocation', to: '/gate-allocation' },
     { label: 'Slot Optimization', to: '/gate-optimization' },
     { label: 'All Appointments', to: '/appointments' },
