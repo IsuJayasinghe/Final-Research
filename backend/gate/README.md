@@ -17,9 +17,16 @@ runs the component standalone.
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/api/appointments` | Score risk, pick slot (overbooking rule) and lane, predict clearance, save |
-| GET | `/api/appointments` | List saved appointments |
+| GET | `/api/appointments?truck_id=&status=` | List saved appointments (a driver filters by truck) |
 | GET | `/api/appointments/{id}/events` | Audit trail of assignments, moves and status changes |
-| POST | `/api/appointments/{id}/confirm` / `/cancel` | Lifecycle |
+| POST | `/api/appointments/{id}/approve` (`/confirm` alias) | Gate admin approves a PENDING request; this unlocks document upload |
+| POST | `/api/appointments/{id}/reject` | Gate admin rejects with a reason `{reason}` |
+| POST | `/api/appointments/{id}/cancel` | Driver or admin cancels |
+| GET | `/api/appointments/{id}/live` | Driver's live trip: phase, next step, gate, lane status, queue, expected entry/wait, delay and why |
+| GET | `/api/appointments/{id}/notifications` | Driver updates: approved/rejected, gate changed, delay update, documents checked |
+| POST / DELETE | `/api/lanes/{lane}/close` | Close a lane for `hours` with a reason (bookings move automatically) / reopen it |
+| GET | `/api/lanes/closures` | Active lane closures |
+| POST | `/api/rebalance` | Move trucks from queued lanes to quieter ones at the same hour (min gain 3 trucks) |
 | POST | `/api/reoptimize` | Apply a disruption (vessel delay hours, queue spike %, window, start) and re-optimize |
 | DELETE | `/api/disruption` | Clear the active disruption |
 | GET | `/api/slots?date=` | Hourly slot load: bookings, expected arrivals, capacity, forecast wait |
@@ -35,6 +42,18 @@ runs the component standalone.
 | GET | `/api/congestion?at=` | Per-lane forecast queue and wait for a chosen hour |
 | GET | `/api/congestion/profile?date=` | Forecast congestion for each of the 24 hours (worst-lane queue, wait, normal/busy/congested, bookings) |
 | GET | `/api/lane-view?date=&hour=` | All 6 lanes at one hour: forecast queue, wait, status and the real appointments on each lane (applies any active disruption) |
+
+## Approval workflow (driver and gate admin)
+1. The driver checks the hourly gate status, picks an hour and requests an appointment. The request is saved as
+   **PENDING** with a slot and gate already assigned (overbooking rule, lane choice).
+2. A gate admin approves (**CONFIRMED**) or rejects (**REJECTED**, reason required). Until approved,
+   `POST /api/appointments/{id}/documents/check` answers **409** - documents cannot be uploaded early.
+3. After approval the driver uploads documents; each is OCR-checked and the booking is re-scored on submit.
+4. Until the slot time the driver follows `/live` and `/notifications`. When a disruption, a lane closure or a
+   rebalance changes the expected wait by 5 min or more, or moves the truck to another gate, a notification with the
+   reason is recorded (`DELAY_UPDATE` / `LANE_CHANGED`).
+
+Roles in the front end are a **demo switch**, not authentication; drivers are identified by truck ID.
 
 ## Nothing about the booking's conditions is typed in
 A booking only needs who, what and when (truck, container, carrier, cargo, arrival date and hour). Everything else
@@ -148,5 +167,7 @@ Docs at `http://localhost:8000/docs`. Models are produced by `ml-models/gate/`.
 - OCR runs on clear scans and photos of printed text; handwriting and heavily degraded images are flagged as
   unreadable rather than guessed. Classification is keyword-based (no trained document classifier).
 - Document verdicts are held in the running process until submitted (submission itself is saved).
-- A disruption is held in the running process (cleared by `DELETE /api/disruption` or a restart).
+- A disruption and lane closures are held in the running process (cleared by their DELETE endpoints or a restart).
+- Closing a lane moves its trucks but does not reduce the hourly slot capacity.
+- Approval and roles are not authenticated; the Driver / Gate admin switch is for demonstration.
 - Slot capacity (`GATE_SLOT_CAPACITY`, default 6 for demos) is configurable; the evaluation uses 16.
