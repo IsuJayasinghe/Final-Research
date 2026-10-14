@@ -7,6 +7,9 @@ export const STATUS_LABEL = {
   REJECTED: 'Rejected',
   WAITLISTED: 'Waitlisted',
   CANCELLED: 'Cancelled',
+  ARRIVED: 'At gate',
+  COMPLETED: 'Completed',
+  NO_SHOW: 'No-show',
 }
 
 export const STATUS_STYLES = {
@@ -15,6 +18,9 @@ export const STATUS_STYLES = {
   REJECTED: 'bg-red-50 text-red-700',
   WAITLISTED: 'bg-amber-50 text-amber-700',
   CANCELLED: 'bg-gray-100 text-gray-500',
+  ARRIVED: 'bg-amber-50 text-amber-700',
+  COMPLETED: 'bg-green-100 text-green-800',
+  NO_SHOW: 'bg-red-50 text-red-700',
 }
 
 export const statusLabel = (status) => STATUS_LABEL[status] ?? status
