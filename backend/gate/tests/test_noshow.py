@@ -56,3 +56,53 @@ def test_explanation_lists_top_drivers_with_direction():
 def test_unknown_carrier_falls_back_to_defaults():
     out = noshow.predict_risk(row(carrier="Carrier-ZZZ"))
     assert 0 <= out["p_no_show"] <= 1
+
+
+# ---- unknown document facts ---------------------------------------------------------------
+
+def args(**kw):
+    base = dict(
+        arrival=ARRIVAL,
+        carrier="Carrier-B",
+        container_type="hazardous",
+        cargo_category="export",
+        carrier_reliability=0.54,
+        lead_time_hours=34,
+        weather_severity=1,
+    )
+    base.update(kw)
+    return base
+
+
+def test_known_documents_match_the_plain_prediction():
+    out = noshow.predict_risk_for_documents("low", 0, **args())
+    plain = noshow.predict_risk(noshow.build_row(customs_risk_flag="low", missing_documents=0, **args()))
+    assert out["p_no_show"] == plain["p_no_show"] and out["documents_known"] is True
+
+
+def test_unknown_documents_fall_between_the_best_and_worst_case():
+    unknown = noshow.predict_risk_for_documents(None, None, **args())
+    best = noshow.predict_risk_for_documents("low", 0, **args())["p_no_show"]
+    worst = noshow.predict_risk_for_documents("high", 3, **args())["p_no_show"]
+    assert best < unknown["p_no_show"] < worst
+    assert unknown["documents_known"] is False and "not checked yet" in unknown["summary"]
+    assert abs(unknown["p_on_time"] + unknown["p_late"] + unknown["p_no_show"] - 1) < 1e-3
+
+
+def test_unknown_documents_are_not_presented_as_drivers():
+    out = noshow.predict_risk_for_documents(None, None, **args())
+    labels = " ".join(d["label"] for d in out["drivers"])
+    assert "missing document" not in labels and "customs" not in labels and len(out["drivers"]) == 3
+
+
+def test_partially_known_documents_narrow_the_estimate():
+    both_unknown = noshow.predict_risk_for_documents(None, None, **args())["p_no_show"]
+    high_customs = noshow.predict_risk_for_documents("high", None, **args())["p_no_show"]
+    low_customs = noshow.predict_risk_for_documents("low", None, **args())["p_no_show"]
+    assert low_customs < both_unknown < high_customs
+
+
+def test_document_scenarios_cover_the_prior():
+    scen = noshow.document_scenarios(None, None)
+    assert len(scen) == 12 and abs(sum(w for *_, w in scen) - 1) < 1e-9
+    assert noshow.document_scenarios("low", 9) == [("low", 3, 1.0)]  # missing count is capped at the trained range

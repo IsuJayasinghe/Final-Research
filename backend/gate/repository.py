@@ -34,8 +34,8 @@ class Appointment:
     assigned_slot: datetime | None = None
     lane: int | None = None
     status: str = "PENDING"  # PENDING (unconfirmed) | CONFIRMED | WAITLISTED | CANCELLED
-    customs_risk_flag: str = "low"
-    missing_documents: int = 0
+    customs_risk_flag: str | None = None  # None until the customs document has been read by OCR
+    missing_documents: int | None = None  # None until the documents have been checked
     carrier_reliability: float = 0.75
     p_no_show: float = 0.0
     p_late: float = 0.0
@@ -165,8 +165,8 @@ class PostgresRepository:
             assigned_slot=r["assigned_arrival"],
             lane=self._lane(r["gate_id"]),
             status=r["appointment_status"],
-            customs_risk_flag=r["customs_risk_flag"] or "low",
-            missing_documents=r["missing_documents_count"] or 0,
+            customs_risk_flag=r["customs_risk_flag"],
+            missing_documents=r["missing_documents_count"],
             carrier_reliability=float(r["carrier_reliability_score"] or 0),
             p_no_show=float(r["no_show_probability"] or 0),
             p_late=float(r["late_probability"] or 0),

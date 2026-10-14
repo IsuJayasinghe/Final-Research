@@ -256,3 +256,58 @@ def test_document_submission_guards(svc):
     svc.cancel(aid)
     with pytest.raises(BookingError):
         svc.submit_documents(aid)
+
+
+# ---- documents unknown at booking, established by OCR afterwards ----------------------------------
+
+def booking_without_documents(svc, i=1, **kw):
+    base = dict(container_id="CSQU3054383", truck_id="TRK-80579", container_type="hazardous",
+                carrier="Carrier-B", carrier_reliability=0.54, arrival_date=DATE, arrival_hour=10)
+    base.update(kw)
+    r = req(i, **base)
+    r.pop("customs_risk_flag")
+    r.pop("missing_documents")
+    return svc.create(r, now=EARLY)
+
+
+def test_booking_without_documents_is_estimated_not_assumed_clean(svc):
+    out = booking_without_documents(svc)
+    a = out["appointment"]
+    assert a["customs_risk_flag"] is None and a["missing_documents"] is None
+    assert out["risk"]["documents_known"] is False and "not checked yet" in a["risk_summary"]
+    assert a["predicted_clearance_minutes"] > 0 and a["lane"] in range(1, 7)
+    known_clean = svc.create(req(2, hour=10, container_id="CSQU3054383", customs_risk_flag="low", missing_documents=0,
+                                 carrier="Carrier-B", carrier_reliability=0.54, container_type="hazardous"), now=EARLY)
+    assert known_clean["appointment"]["p_no_show"] < a["p_no_show"]  # a verified-clean set is better than a guess
+
+
+@ocr_needed
+@pytest.mark.parametrize("cusdec_name,level", [("cusdec_low_risk", "low"), ("cusdec", "medium"), ("cusdec_high_risk", "high")])
+def test_customs_risk_comes_from_the_uploaded_customs_document(svc, sample_dir, cusdec_name, level):
+    aid = booking_without_documents(svc)["appointment"]["id"]
+    for name, slot in SLOTS.items():
+        upload(svc, sample_dir, aid, cusdec_name if slot == "cusdec" else name, slot)
+    out = svc.submit_documents(aid)
+    assert out["before"]["customs_risk"] is None and out["after"]["customs_risk"] == level
+    assert out["customs_assessment"]["level"] == level and out["missing"] == 0
+    assert svc.repo.get(aid).customs_risk_flag == level and svc.repo.get(aid).missing_documents == 0
+
+
+@ocr_needed
+def test_riskier_customs_document_gives_higher_no_show_risk(svc, sample_dir):
+    risks = {}
+    for i, name in enumerate(("cusdec_low_risk", "cusdec_high_risk"), start=1):
+        aid = booking_without_documents(svc, i=i, truck_id=f"TRK-{i}")["appointment"]["id"]
+        for doc, slot in SLOTS.items():
+            upload(svc, sample_dir, aid, name if slot == "cusdec" else doc, slot)
+        risks[name] = svc.submit_documents(aid)["after"]["p_no_show"]
+    assert risks["cusdec_low_risk"] < risks["cusdec_high_risk"]
+
+
+@ocr_needed
+def test_without_a_customs_document_customs_risk_stays_unknown(svc, sample_dir):
+    aid = booking_without_documents(svc)["appointment"]["id"]
+    upload(svc, sample_dir, aid, "vgm", "vgm")
+    out = svc.submit_documents(aid)
+    assert out["after"]["customs_risk"] is None and out["customs_assessment"] is None
+    assert svc.repo.get(aid).customs_risk_flag is None and out["missing"] == 6

@@ -232,3 +232,46 @@ def test_digital_pdf_uses_its_text_layer_without_ocr():
     page.insert_text((50, 80), f"VERIFIED GROSS MASS (VGM)  Container No: {CONTAINER}  Verified Gross Mass: 24,350 kg")
     r = docs.check_document(pdf.tobytes(), "vgm.pdf", "vgm", CTX)
     assert r["engine"] == "pdf-text" and r["ocr_confidence"] == 1.0 and r["status"] == "cleared"
+
+
+# ---- customs risk derived from the CUSDEC --------------------------------------------------
+
+def test_extracts_hs_code_declaration_number_and_goods():
+    f = docs.extract_fields("CUSTOMS CLEARANCE CUSDEC\nDeclaration No: CUS-2026-558120\nGoods: Petroleum oils\nHS Code: 2710.19")
+    assert f["hs_code"] == "2710.19" and f["declaration_no"] == "CUS-2026-558120" and f["goods_description"] == "Petroleum oils"
+    assert docs.extract_fields("HS Code 6109")["hs_code"] == "6109"
+
+
+@pytest.mark.parametrize(
+    "hs,level",
+    [("6109.10", "low"), ("8501.10", "medium"), ("2710.19", "medium"), ("2402.20", "high"), ("9302.00", "high")],
+)
+def test_customs_risk_by_hs_chapter(hs, level):
+    assert docs.assess_customs_risk({"hs_code": hs, "declaration_no": "CUS-1234"})["level"] == level
+
+
+def test_incomplete_declaration_raises_customs_risk():
+    assert docs.assess_customs_risk({"hs_code": "6109.10"})["level"] == "medium"  # ordinary goods, no declaration no.
+    no_hs = docs.assess_customs_risk({"declaration_no": "CUS-1234"})
+    assert no_hs["level"] == "medium" and "No HS code" in no_hs["reasons"][0]
+    assert docs.assess_customs_risk({})["level"] == "high"  # nothing usable on the declaration
+
+
+def test_cusdec_warns_when_hs_or_declaration_is_missing():
+    issues = run("cusdec", "CUSTOMS CLEARANCE DOCUMENT CUSDEC Customs Declaration Exporter Consignee")
+    assert {"hs_missing", "declaration_missing"} <= codes(issues, "warning")
+
+
+@ocr
+@pytest.mark.parametrize(
+    "name,level",
+    [("cusdec", "medium"), ("cusdec_low_risk", "low"), ("cusdec_high_risk", "high"), ("cusdec_incomplete", "high")],
+)
+def test_ocr_derives_customs_risk_from_each_declaration(samples, name, level):
+    r = check(samples, name, "cusdec")
+    assert r["status"] == "cleared" and r["customs_assessment"]["level"] == level
+
+
+@ocr
+def test_non_customs_documents_carry_no_customs_assessment(samples):
+    assert check(samples, "vgm", "vgm")["customs_assessment"] is None

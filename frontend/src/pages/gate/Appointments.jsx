@@ -221,6 +221,9 @@ export default function Appointments() {
                       <td className="px-3 py-3 text-gray-700">{r.lane ? `Gate ${r.lane}` : '--'}</td>
                       <td className={`px-3 py-3 font-semibold ${riskClass(r.p_no_show)}`}>
                         {Math.round(r.p_no_show * 100)}%
+                        {r.missing_documents === null && (
+                          <span className="block text-[10px] font-normal text-blue-600">docs not checked</span>
+                        )}
                       </td>
                       <td className="px-3 py-3">
                         <span
@@ -271,6 +274,13 @@ export default function Appointments() {
                               <p className="mt-2 text-xs text-gray-500">
                                 Predicted clearance ~{r.predicted_clearance_minutes ?? '--'} min · late{' '}
                                 {Math.round(r.p_late * 100)}%
+                              </p>
+                              <p className="mt-1 text-xs text-gray-500">
+                                Documents:{' '}
+                                {r.missing_documents === null
+                                  ? 'not checked yet (typical situation assumed)'
+                                  : `${r.missing_documents} missing or flagged`}
+                                {' · '}customs risk {r.customs_risk_flag ?? 'unknown'}
                               </p>
                             </div>
                             <div>

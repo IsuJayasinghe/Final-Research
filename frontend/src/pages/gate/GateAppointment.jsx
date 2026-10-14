@@ -31,12 +31,6 @@ const CARRIER_RELIABILITY = {
 }
 const CARRIERS = Object.keys(CARRIER_RELIABILITY)
 
-const CUSTOMS_RISK = [
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' },
-]
-
 const WEATHER = [
   { value: 0, label: '0 - Clear' },
   { value: 1, label: '1 - Light rain' },
@@ -111,9 +105,7 @@ export default function GateAppointment() {
     containerType: 'standard',
     preferredDate: tomorrowDate(),
     arrivalHour: 9,
-    customsRiskFlag: 'low',
     carrierReliability: CARRIER_RELIABILITY[CARRIERS[0]],
-    missingDocuments: 0,
     weatherSeverity: 0,
     vesselDelay: false,
   })
@@ -294,37 +286,10 @@ export default function GateAppointment() {
           </select>
         </div>
 
-        <div>
-          <label htmlFor="customsRiskFlag" className="block text-sm font-medium text-gray-700">
-            Customs Risk Level
-          </label>
-          <select
-            id="customsRiskFlag"
-            value={form.customsRiskFlag}
-            onChange={updateField('customsRiskFlag')}
-            className={INPUT_CLASS}
-          >
-            {CUSTOMS_RISK.map((r) => (
-              <option key={r.value} value={r.value}>
-                {r.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label htmlFor="missingDocuments" className="block text-sm font-medium text-gray-700">
-            Missing Documents
-          </label>
-          <input
-            id="missingDocuments"
-            type="number"
-            min="0"
-            max="5"
-            value={form.missingDocuments}
-            onChange={updateField('missingDocuments')}
-            className={INPUT_CLASS}
-          />
+        <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-900 sm:col-span-2">
+          <b>Customs risk and missing documents are not typed in.</b> They are worked out after booking by
+          reading your uploaded documents with OCR. Until then the risk estimate assumes a typical document
+          situation, and it is firmed up once your documents are checked.
         </div>
 
         <div>
@@ -375,8 +340,8 @@ export default function GateAppointment() {
             className="mt-2 w-full accent-[#123a5c]"
           />
           <p className="mt-1 text-xs text-gray-500">
-            Customs risk, missing documents, weather and reliability are entered here for the demo; in
-            production they come from customs records, forecasts and the carrier&apos;s booking history.
+            Weather and reliability are entered here for the demo; in production they come from forecasts
+            and the carrier&apos;s booking history.
           </p>
         </div>
 
@@ -445,6 +410,27 @@ export default function GateAppointment() {
                 value={hhmm(result.timing.gate_entry)}
               />
               <ResultStat icon={Truck} label="Expected Departure" value={hhmm(result.timing.departure)} />
+            </div>
+          )}
+
+          {!result.risk.documents_known && (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-900">
+              <span>
+                <b>Documents not checked yet.</b> This estimate assumes a typical document situation. Upload
+                your documents to firm up the risk and the clearance time.
+              </span>
+              <Link
+                to="/document-upload"
+                state={{
+                  appointmentId: appt.id,
+                  containerId: form.containerId,
+                  truckId: form.truckId,
+                  containerType: form.containerType,
+                }}
+                className="font-semibold text-[#123a5c] hover:underline"
+              >
+                Upload documents now
+              </Link>
             </div>
           )}
 

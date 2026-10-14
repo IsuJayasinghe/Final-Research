@@ -114,3 +114,12 @@ def test_document_submissions_are_stored_per_appointment(repo):
     got = repo.submissions(a.id)
     assert len(got) == 1 and got[0]["cargo_details"] == '{"seal": "SL1"}' and got[0]["clearance_information"] == '{"missing": 0}'
     assert repo.submissions(b.id)[0]["clearance_information"] == '{"missing": 2}'
+
+
+def test_unchecked_documents_stay_unknown_not_zero(repo):
+    saved = repo.add(make(customs_risk_flag=None, missing_documents=None))
+    got = repo.get(saved.id)
+    assert got.customs_risk_flag is None and got.missing_documents is None
+    repo.update(saved.id, customs_risk_flag="medium", missing_documents=1)
+    got = repo.get(saved.id)
+    assert got.customs_risk_flag == "medium" and got.missing_documents == 1

@@ -68,10 +68,16 @@ class CongestionResponse(BaseModel):
 
 
 class BookingRequest(ModelInputs):
-    """Create a persisted appointment: all model inputs plus identifiers and live conditions."""
+    """Create a persisted appointment: model inputs plus identifiers and live conditions.
+
+    customs_risk_flag and missing_documents are normally left out: they are established by reading the
+    documents with OCR after booking. Until then the risk model assumes the typical document situation.
+    """
 
     truck_id: str
     container_id: str
+    customs_risk_flag: CustomsRisk | None = None
+    missing_documents: int | None = Field(None, ge=0, le=7)
     weather_severity: int = Field(0, ge=0, le=3)
     vessel_delay: bool = False
 

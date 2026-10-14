@@ -148,3 +148,55 @@ def explain_sentence(p_no_show: float, drivers: list[dict]) -> str:
     if lowering:
         parts.append("lowered by " + ", ".join(lowering))
     return "; ".join(parts) + "."
+
+
+# ---- bookings whose documents have not been checked yet ---------------------------------------
+
+# Typical document situation in the training data. Before OCR has verified a booking's documents the
+# customs risk and missing-document count are unknown, so the prediction is the average over these.
+DOC_PRIOR_CUSTOMS = {"low": 0.72, "medium": 0.20, "high": 0.08}
+DOC_PRIOR_MISSING = {0: 0.75, 1: 0.15, 2: 0.07, 3: 0.03}
+MODEL_MAX_MISSING = 3  # the models were trained on 0-3 missing documents
+
+
+def document_scenarios(customs: str | None, missing: int | None) -> list[tuple[str, int, float]]:
+    """(customs risk, missing documents, probability) for every case still possible."""
+    customs_options = {customs: 1.0} if customs else DOC_PRIOR_CUSTOMS
+    missing_options = {min(missing, MODEL_MAX_MISSING): 1.0} if missing is not None else DOC_PRIOR_MISSING
+    return [(c, m, pc * pm) for c, pc in customs_options.items() for m, pm in missing_options.items()]
+
+
+def predict_risk_for_documents(customs: str | None, missing: int | None, **row_args) -> dict:
+    """Risk with optionally unknown document facts.
+
+    Both known -> identical to predict_risk on that row. Otherwise the outcome probabilities are the
+    weighted average over the possible document situations, and the SHAP drivers come from the most
+    likely one."""
+    scenarios = document_scenarios(customs, missing)
+    rows = [
+        build_row(customs_risk_flag=c, missing_documents=m, **row_args)
+        for c, m, _ in scenarios
+    ]
+    weights = np.array([w for _, _, w in scenarios])
+    weights = weights / weights.sum()
+    modal = int(np.argmax(weights))
+
+    out = predict_risk(rows[modal], top_k=10 if len(rows) > 1 else 3)
+    if len(rows) > 1:
+        # drivers that only reflect the assumed document situation would present guesses as facts
+        assumed = (["missing_documents_count"] if missing is None else []) + (
+            ["customs_risk_flag_"] if customs is None else []
+        )
+        out["drivers"] = [d for d in out["drivers"] if not any(d["feature"].startswith(a) for a in assumed)][:3]
+        frame = pd.concat(rows, ignore_index=True)
+        proba = _artifact["pipeline"].predict_proba(frame[_artifact["features"]])
+        avg = (proba * weights[:, None]).sum(axis=0)
+        by_class = dict(zip(_artifact["classes"], avg))
+        out["p_on_time"] = round(float(by_class["on_time"]), 4)
+        out["p_late"] = round(float(by_class["late"]), 4)
+        out["p_no_show"] = round(float(by_class["no_show"]), 4)
+        out["summary"] = explain_sentence(out["p_no_show"], out["drivers"]) + " Documents not checked yet: assumes the typical document situation."
+    out["documents_known"] = customs is not None and missing is not None
+    out["customs_known"] = customs is not None
+    out["missing_known"] = missing is not None
+    return out

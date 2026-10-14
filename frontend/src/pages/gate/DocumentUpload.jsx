@@ -54,6 +54,9 @@ const FIELD_LABELS = {
   truck_id: 'Truck',
   plate: 'Vehicle reg.',
   licence_no: 'Licence no.',
+  hs_code: 'HS code',
+  declaration_no: 'Declaration no.',
+  goods_description: 'Goods',
   un_number: 'UN number',
   temperature_c: 'Set point (C)',
   dates: 'Dates',
@@ -186,6 +189,11 @@ function DocumentRow({ doc, entry, disabled, onFile }) {
             Recognised as: <b>{entry.detected_label ?? 'unknown document'}</b>
           </p>
           <ExtractedFields fields={entry.fields} />
+          {entry.customs_assessment && (
+            <p className="rounded-md bg-white p-2 text-xs text-gray-700">
+              <b>Customs risk: {cap(entry.customs_assessment.level)}.</b> {entry.customs_assessment.reasons.join(' ')}
+            </p>
+          )}
           {entry.text_preview && (
             <details className="text-xs text-gray-600">
               <summary className="cursor-pointer font-medium text-[#123a5c]">Text read by OCR</summary>
@@ -200,14 +208,20 @@ function DocumentRow({ doc, entry, disabled, onFile }) {
   )
 }
 
-function RiskDelta({ label, before, after, format }) {
-  const improved = after < before
+const RISK_ORDER = { low: 0, medium: 1, high: 2 }
+const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s)
+
+// before === null means "not known / not checked yet" (e.g. a booking made before its documents were read)
+function RiskDelta({ label, before, after, format, order = (v) => v }) {
+  const known = before !== null && before !== undefined
+  const better = known && order(after) < order(before)
+  const worse = known && order(after) > order(before)
   return (
     <div className="rounded-md bg-gray-50 p-3 text-center">
       <p className="text-xs text-gray-500">{label}</p>
-      <p className="mt-1 text-sm text-gray-500 line-through">{format(before)}</p>
-      <p className={`text-xl font-bold ${improved ? 'text-green-700' : after > before ? 'text-red-600' : 'text-[#123a5c]'}`}>
-        {format(after)}
+      <p className="mt-1 text-sm text-gray-500">{known ? <span className="line-through">{format(before)}</span> : 'not checked'}</p>
+      <p className={`text-xl font-bold ${better ? 'text-green-700' : worse ? 'text-red-600' : 'text-[#123a5c]'}`}>
+        {after === null || after === undefined ? 'unknown' : format(after)}
       </p>
     </div>
   )
@@ -445,12 +459,19 @@ export default function DocumentUpload() {
               ? `${outcome.summary} Fix the flagged or missing documents and resubmit.`
               : 'All documents cleared. Your booking has been updated - you are ready for a fast final verification at the gate.'}
           </p>
-          <div className="mt-4 grid grid-cols-3 gap-3">
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <RiskDelta
               label="Missing documents"
               before={outcome.before.missing_documents}
               after={outcome.after.missing_documents}
               format={(v) => String(v)}
+            />
+            <RiskDelta
+              label="Customs risk"
+              before={outcome.before.customs_risk}
+              after={outcome.after.customs_risk}
+              format={cap}
+              order={(v) => RISK_ORDER[v] ?? 0}
             />
             <RiskDelta label="No-show risk" before={outcome.before.p_no_show} after={outcome.after.p_no_show} format={pct} />
             <RiskDelta
@@ -460,9 +481,20 @@ export default function DocumentUpload() {
               format={(v) => `${Math.round(v)} min`}
             />
           </div>
+          {outcome.customs_assessment && (
+            <p className="mt-3 text-xs text-gray-700">
+              <b>Customs risk {outcome.customs_assessment.level}</b> (read from your customs declaration):{' '}
+              {outcome.customs_assessment.reasons.join(' ')}
+            </p>
+          )}
+          {!outcome.customs_assessment && (
+            <p className="mt-3 text-xs text-amber-700">
+              No customs declaration was checked, so customs risk is still unknown. Upload the CUSDEC to establish it.
+            </p>
+          )}
           <p className="mt-3 text-xs text-gray-600">
-            Document completeness feeds the no-show and clearance-time models, so a complete, readable
-            document set lowers both.
+            Document completeness and the customs risk read from the declaration feed the no-show and
+            clearance-time models: a complete, low-risk set lowers both; high-risk goods raise clearance time.
           </p>
           <Link to="/appointments" className="mt-3 inline-block text-sm font-medium text-[#123a5c] hover:underline">
             View appointment history

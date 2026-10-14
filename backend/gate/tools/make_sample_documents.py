@@ -7,11 +7,12 @@ is needed too) plus deliberately faulty variants:
   good set           booking_confirmation, cusdec, gate_pass, vgm, seal_photo, driver_docs, special_cargo
   faulty variants    vgm_wrong_container, seal_missing, vgm_bad_weight, gate_pass_blurry, wrong_document
 
-All contents are made up. Usage:  python tools/make_sample_documents.py [output_dir]
+All contents are made up. Usage:  python tools/make_sample_documents.py [output_dir] [YYYY-MM-DD appointment date]
 Default output: backend/gate/sample_documents/ (git-ignored).
 """
 
 import random
+from datetime import date, timedelta
 import sys
 from pathlib import Path
 
@@ -26,7 +27,8 @@ CONTAINER = "CSQU3054383"  # the ISO 6346 standard's own worked example (valid c
 OTHER_CONTAINER = "MSKU" + "123456" + str(iso6346_check_digit("MSKU123456"))
 TRUCK = "TRK-80579"
 SEAL = "SL884213"
-APPT_DATE = "2026-10-14"
+# Date printed on the documents: tomorrow by default (the booking form default); override with --date.
+APPT_DATE = (date.today() + timedelta(days=1)).isoformat()
 
 _FONT_CANDIDATES = [
     r"C:\Windows\Fonts\arial.ttf",
@@ -84,13 +86,25 @@ def main(out: Path) -> None:
         f"ETD: {APPT_DATE}   Shipper: Lanka Exports Ltd",
     ], out / "booking_confirmation.png", "Sri Lanka Ports Authority - Terminal Booking")
 
-    render("CUSTOMS CLEARANCE DOCUMENT (CUSDEC)", [
-        "Declaration No: CUS-2026-558120",
-        "Customs Declaration - Export",
-        "Exporter: Lanka Exports Ltd   Consignee: Pacific Imports Pte",
-        "HS Code: 2710.19   Duty: LKR 0.00",
-        f"Container: {CONTAINER}   Date: {APPT_DATE}",
-    ], out / "cusdec.png", "Sri Lanka Customs")
+    def cusdec(name: str, goods: str | None, hs: str | None, declaration: bool = True) -> None:
+        lines = []
+        if declaration:
+            lines.append("Declaration No: CUS-2026-558120")
+        lines.append("Customs Declaration - Export")
+        lines.append("Exporter: Lanka Exports Ltd   Consignee: Pacific Imports Pte")
+        if goods:
+            lines.append(f"Goods: {goods}")
+        if hs:
+            lines.append(f"HS Code: {hs}   Duty: LKR 0.00")
+        lines.append(f"Container: {CONTAINER}   Date: {APPT_DATE}")
+        render("CUSTOMS CLEARANCE DOCUMENT (CUSDEC)", lines, out / f"{name}.png", "Sri Lanka Customs")
+
+    # customs risk is derived from the declaration: medium (fuels), low (ordinary goods),
+    # high (tobacco) and high (incomplete declaration: no declaration number, no HS code)
+    cusdec("cusdec", "Petroleum oils", "2710.19")
+    cusdec("cusdec_low_risk", "Cotton T-shirts", "6109.10")
+    cusdec("cusdec_high_risk", "Cigarettes", "2402.20")
+    cusdec("cusdec_incomplete", None, None, declaration=False)
 
     render("GATE PASS", [
         f"Truck: {TRUCK}   Vehicle No: WP CAB-1234",
@@ -160,4 +174,6 @@ def main(out: Path) -> None:
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 2:
+        APPT_DATE = sys.argv[2]
     main(Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "sample_documents")
