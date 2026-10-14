@@ -1,6 +1,7 @@
 import { Anchor, Bell, ChevronDown, Search, User } from 'lucide-react'
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { useRole } from '../lib/role'
 
 const NAV_LINKS = [
   { label: 'Home', to: '/' },
@@ -10,17 +11,32 @@ const NAV_LINKS = [
   { label: 'About', to: '/#about' },
 ]
 
-const SOLUTIONS = [
-  { label: 'Gate Appointment', to: '/gate-appointment' },
-  { label: 'Document Upload', to: '/document-upload' },
-  { label: 'My Appointments', to: '/appointments' },
-  { label: 'Gate Allocation (Port Authority)', to: '/gate-allocation' },
-  { label: 'Slot Optimization', to: '/gate-optimization' },
-  { label: 'Model Results', to: '/model-results' },
-]
+const SOLUTIONS = {
+  driver: [
+    { label: 'Request Appointment', to: '/gate-appointment' },
+    { label: 'My Trip (live)', to: '/my-trip' },
+    { label: 'Upload Documents', to: '/document-upload' },
+    { label: 'Gate Status', to: '/gate-allocation' },
+  ],
+  admin: [
+    { label: 'Approvals', to: '/admin/approvals' },
+    { label: 'Gate Allocation', to: '/gate-allocation' },
+    { label: 'Slot Optimization', to: '/gate-optimization' },
+    { label: 'All Appointments', to: '/appointments' },
+    { label: 'Model Results', to: '/model-results' },
+  ],
+}
 
 export default function Navbar() {
   const [solutionsOpen, setSolutionsOpen] = useState(false)
+  const { role, setRole } = useRole()
+  const navigate = useNavigate()
+
+  const switchRole = (next) => {
+    if (next === role) return
+    setRole(next)
+    navigate('/')
+  }
 
   return (
     <header className="bg-[#123a5c] text-white">
@@ -56,7 +72,7 @@ export default function Navbar() {
                 </button>
                 {solutionsOpen && (
                   <div className="absolute left-0 top-full w-56 rounded-md bg-white py-2 text-[#123a5c] shadow-lg">
-                    {SOLUTIONS.map((item) => (
+                    {SOLUTIONS[role].map((item) => (
                       <Link
                         key={item.label}
                         to={item.to}
@@ -80,8 +96,31 @@ export default function Navbar() {
           )}
         </nav>
 
-        {/* Right side: search, notifications, profile */}
+        {/* Right side: role switch, search, notifications, profile */}
         <div className="flex items-center gap-4">
+          <div
+            role="group"
+            aria-label="Viewing as"
+            className="flex rounded-full bg-white/10 p-0.5 text-xs font-semibold"
+          >
+            {[
+              ['driver', 'Driver'],
+              ['admin', 'Gate admin'],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={role === value}
+                onClick={() => switchRole(value)}
+                className={`rounded-full px-3 py-1 transition-colors ${
+                  role === value ? 'bg-white text-[#123a5c]' : 'text-white/80 hover:text-white'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
           <div className="relative hidden sm:block">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#123a5c]/60" />
             <input

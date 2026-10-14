@@ -93,3 +93,17 @@ class DisruptionRequest(BaseModel):
     window_hours: int = Field(4, ge=1, le=12)
     # When the disruption begins (ISO, e.g. 2030-01-07T10:00); defaults to the next full hour.
     start: str | None = None
+    # Hit only this gate lane (1-6); leave out for a gate-wide disruption.
+    lane: int | None = Field(None, ge=1, le=6)
+
+
+class RejectRequest(BaseModel):
+    reason: str = Field("", max_length=300)
+
+
+class LaneCloseRequest(BaseModel):
+    """Take a lane out of service (breakdown, maintenance). Booked drivers are moved to another gate automatically."""
+
+    hours: int = Field(4, ge=1, le=48)
+    start: str | None = None  # ISO, e.g. 2030-01-07T10:00; defaults to the current hour
+    reason: str = Field("maintenance", max_length=120)

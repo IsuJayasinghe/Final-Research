@@ -1,21 +1,16 @@
 import { ChevronDown, ChevronRight, Loader2, RefreshCw } from 'lucide-react'
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { STATUS_LABEL, STATUS_STYLES, statusLabel } from '../../lib/status'
 import {
   cancelAppointment,
-  confirmAppointment,
+  rejectAppointment,
+  approveAppointment,
   getAppointmentEvents,
   listAppointments,
 } from '../../lib/gateApi'
 
-const STATUS_STYLES = {
-  PENDING: 'bg-blue-50 text-blue-700',
-  CONFIRMED: 'bg-green-50 text-green-700',
-  WAITLISTED: 'bg-amber-50 text-amber-700',
-  CANCELLED: 'bg-gray-100 text-gray-500',
-}
-
-const FILTERS = ['ALL', 'PENDING', 'CONFIRMED', 'WAITLISTED', 'CANCELLED']
+const FILTERS = ['ALL', 'PENDING', 'CONFIRMED', 'REJECTED', 'WAITLISTED', 'CANCELLED']
 
 const fmtSlot = (iso) => (iso ? `${iso.slice(5, 10)} ${iso.slice(11, 16)}` : '--')
 const fmtDateTime = (iso) => (iso ? iso.replace('T', ' ').slice(0, 16) : '--')
@@ -108,9 +103,9 @@ export default function Appointments() {
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-[#123a5c]">Appointments</h1>
+          <h1 className="text-2xl font-bold text-[#123a5c]">All Appointments</h1>
           <p className="mt-1 text-sm text-gray-600">
-            Saved bookings with the model&apos;s risk score and the reason behind every slot decision.
+            Every request with the model&apos;s risk score, the reason behind each slot decision, and its full history (approvals, gate changes, delays).
           </p>
         </div>
         <div className="flex gap-2">
@@ -143,7 +138,7 @@ export default function Appointments() {
                 : 'border-gray-300 text-gray-600 hover:bg-gray-50'
             }`}
           >
-            {f === 'ALL' ? `All (${rows.length})` : `${f[0]}${f.slice(1).toLowerCase()} (${counts[f] ?? 0})`}
+            {f === 'ALL' ? `All (${rows.length})` : `${STATUS_LABEL[f]} (${counts[f] ?? 0})`}
           </button>
         ))}
       </div>
@@ -229,22 +224,35 @@ export default function Appointments() {
                         <span
                           className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[r.status] ?? ''}`}
                         >
-                          {r.status}
+                          {statusLabel(r.status)}
                         </span>
                       </td>
                       <td className="px-3 py-3 text-right">
                         <div className="flex justify-end gap-2">
                           {r.status === 'PENDING' && (
-                            <button
-                              type="button"
-                              disabled={busyId === r.id}
-                              onClick={() => act(confirmAppointment, r.id)}
-                              className="rounded-md bg-[#123a5c] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[#0e2d47] disabled:opacity-60"
-                            >
-                              Confirm
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                disabled={busyId === r.id}
+                                onClick={() => act(approveAppointment, r.id)}
+                                className="rounded-md bg-[#123a5c] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[#0e2d47] disabled:opacity-60"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                disabled={busyId === r.id}
+                                onClick={() => {
+                                  const reason = window.prompt('Reason for rejecting this request (the driver will see it):', '')
+                                  if (reason !== null) act((id) => rejectAppointment(id, reason), r.id)
+                                }}
+                                className="rounded-md border border-red-300 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"
+                              >
+                                Reject
+                              </button>
+                            </>
                           )}
-                          {r.status !== 'CANCELLED' && (
+                          {r.status !== 'CANCELLED' && r.status !== 'REJECTED' && (
                             <button
                               type="button"
                               disabled={busyId === r.id}

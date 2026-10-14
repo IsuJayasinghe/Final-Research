@@ -31,6 +31,31 @@ BUSY_QUEUE = 4.0  # a lane with at least this many trucks queued is "busy" ...
 CONGESTED_QUEUE = 8.0  # ... and "congested" from this many
 
 
+LANE_CHANGE_MIN_GAIN = 3.0  # move a truck to another lane only if that lane is at least this many trucks lighter
+DELAY_NOTICE_MIN = 5.0  # tell a driver about a delay once the expected wait has grown by this many minutes
+EVENT_TITLES = {
+    "ASSIGNED": ("Request received", "info"),
+    "APPROVED": ("Approved by the gate admin", "success"),
+    "REJECTED": ("Request rejected", "error"),
+    "REASSIGNED": ("Time slot changed", "warning"),
+    "LANE_CHANGED": ("Gate changed", "warning"),
+    "DELAY_UPDATE": ("Delay update", "warning"),
+    "WAITLISTED": ("Waitlisted", "warning"),
+    "DOCUMENTS_CHECKED": ("Documents checked", "info"),
+    "CANCELLED": ("Cancelled", "info"),
+}
+
+
+@dataclasses.dataclass
+class LaneClosure:
+    """A lane that is out of service for a window (breakdown, maintenance)."""
+
+    lane: int
+    start: datetime
+    end: datetime
+    reason: str = "maintenance"
+
+
 def lane_status(queue: float) -> str:
     if queue >= CONGESTED_QUEUE:
         return "congested"
@@ -43,6 +68,10 @@ class BookingError(ValueError):
     """The request cannot be accepted (bad time, unknown id, wrong status)."""
 
 
+class NotApproved(BookingError):
+    """The action needs the gate admin's approval of the appointment first (e.g. uploading documents)."""
+
+
 def _next_hour(now: datetime) -> datetime:
     return scheduler.hour_floor(now) + timedelta(hours=1)
 
@@ -52,35 +81,61 @@ def _to_state(a: Appointment) -> BookingState:
 
 
 class GateService:
-    def __init__(self, repo):
+    def __init__(self, repo, require_approval: bool = False):
         self.repo = repo
+        # When True (the running app), documents can only be uploaded for an appointment the gate admin has approved.
+        self.require_approval = require_approval
         self.disruption: Disruption | None = None
+        self.closures: list[LaneClosure] = []
         self._doc_results: dict[int, dict[str, dict]] = {}  # appointment id -> document slot -> OCR verdict
 
     # -- forecast helpers -------------------------------------------------
     @staticmethod
     def _base_wait(slot: datetime) -> float:
+        """Expected wait with no disruption or closure (the normal forecast)."""
         lanes = ml_models.get_all_lane_forecasts(slot)
         return ml_models.estimate_wait_minutes(min(lanes.values()))
 
+    def _is_closed(self, lane: int, slot: datetime) -> bool:
+        return any(c.lane == lane and c.start <= slot < c.end for c in self.closures)
+
+    def _closure_reason(self, lane: int, slot: datetime) -> str:
+        return next((c.reason for c in self.closures if c.lane == lane and c.start <= slot < c.end), "closed")
+
+    def _queues(self, slot: datetime, include_closed: bool = False) -> dict[int, float]:
+        """Forecast queue per lane for a slot: the model forecast, raised by an active disruption (the whole gate or
+        one lane). Closed lanes are left out unless `include_closed`."""
+        d = self.disruption
+        uplift = d.uplift(slot) if d else 0.0
+        out = {}
+        for lane, queue in ml_models.get_all_lane_forecasts(slot).items():
+            if not include_closed and self._is_closed(lane, slot):
+                continue
+            hit = d is not None and (d.lane is None or d.lane == lane)
+            out[lane] = queue * (1 + uplift) if hit else queue
+        return out
+
     def _wait(self, slot: datetime) -> float:
-        base = self._base_wait(slot)
-        if self.disruption is None:
-            return base
-        return base * (1 + self.disruption.uplift(slot))
+        """Expected wait in a slot now: the best open lane, with any disruption applied."""
+        return ml_models.estimate_wait_minutes(min(self._queues(slot).values()))
 
-    def _lane_for(self, slot: datetime, exclude_id: int | None = None) -> tuple[int, float, dict[int, float]]:
-        """Lane for a booking in this slot: the lane with the lowest forecast queue PLUS the trucks already booked
-        on it in this hour, so a busy hour spreads across the lanes instead of piling onto the single quietest one.
-
-        Returns (lane, forecast queue of that lane, forecast queue of every lane)."""
-        forecasts = ml_models.get_all_lane_forecasts(slot)
-        booked = {lane: 0 for lane in forecasts}
+    def _lane_loads(self, slot: datetime, exclude_id: int | None = None) -> tuple[dict[int, float], dict[int, float]]:
+        """(forecast queue, effective load) per OPEN lane. Effective load = forecast queue + trucks already booked on
+        that lane in this hour, so a busy hour spreads across the lanes instead of piling onto the quietest one."""
+        queues = self._queues(slot)
+        booked = {lane: 0 for lane in queues}
         for a in self.repo.list(ACTIVE_STATUSES):
             if a.id != exclude_id and a.assigned_slot == slot and a.lane in booked:
                 booked[a.lane] += 1
-        lane = min(forecasts, key=lambda ln: (forecasts[ln] + booked[ln], ln))
-        return lane, forecasts[lane], forecasts
+        return queues, {lane: queues[lane] + booked[lane] for lane in queues}
+
+    def _lane_for(self, slot: datetime, exclude_id: int | None = None) -> tuple[int, float, dict[int, float]]:
+        """Lane for a booking in this slot (never a closed lane): the one with the lowest effective load.
+
+        Returns (lane, forecast queue of that lane, forecast queue of every open lane)."""
+        queues, loads = self._lane_loads(slot, exclude_id)
+        lane = min(loads, key=lambda ln: (loads[ln], ln))
+        return lane, queues[lane], queues
 
     @staticmethod
     def _clearance(a: Appointment, slot: datetime, queue: float) -> float:
@@ -236,6 +291,7 @@ class GateService:
         appointment = None
         if appointment_id is not None:
             appointment = self._require(appointment_id)
+            self._require_approved(appointment)
             slot = appointment.assigned_slot or appointment.requested_slot
             ctx.update(
                 expected_container_id=appointment.container_id,
@@ -283,6 +339,7 @@ class GateService:
         a = self._require(appointment_id)
         if a.status == "CANCELLED":
             raise BookingError("This appointment is cancelled.")
+        self._require_approved(a)
         results = self._doc_results.get(a.id, {})
         if not results:
             raise BookingError("Upload and check at least one document first.")
@@ -416,12 +473,37 @@ class GateService:
             raise BookingError(f"Appointment {appointment_id} not found")
         return a
 
-    def confirm(self, appointment_id: int) -> Appointment:
+    def _require_approved(self, a: Appointment) -> None:
+        """Documents are only accepted after the gate admin approves the appointment."""
+        if self.require_approval and a.status != "CONFIRMED":
+            wait = {
+                "PENDING": "is still waiting for the gate admin to approve it",
+                "WAITLISTED": "is on the waiting list",
+                "REJECTED": "was rejected by the gate admin",
+                "CANCELLED": "is cancelled",
+            }.get(a.status, f"is {a.status}")
+            raise NotApproved(f"Documents can be uploaded once the gate admin approves the appointment; this one {wait}.")
+
+    def approve(self, appointment_id: int, note: str = "") -> Appointment:
+        """Gate admin approves a requested appointment: the slot is fixed and document upload opens."""
         a = self._require(appointment_id)
         if a.status != "PENDING":
-            raise BookingError(f"Only PENDING appointments can be confirmed (this one is {a.status}).")
+            raise BookingError(f"Only appointments awaiting approval can be approved (this one is {a.status}).")
         self.repo.update(appointment_id, status="CONFIRMED")
-        self.repo.add_event(appointment_id, "CONFIRMED", a.assigned_slot, a.assigned_slot, "Confirmed by carrier")
+        message = "Approved by the gate admin. Upload your documents to complete the pre-clearance."
+        self.repo.add_event(appointment_id, "APPROVED", a.assigned_slot, a.assigned_slot, (note + " " + message).strip())
+        return self.repo.get(appointment_id)
+
+    confirm = approve  # the carrier no longer confirms its own booking; kept for older callers
+
+    def reject(self, appointment_id: int, reason: str = "") -> Appointment:
+        """Gate admin declines a requested appointment; the slot is released and the driver sees the reason."""
+        a = self._require(appointment_id)
+        if a.status not in ("PENDING", "WAITLISTED"):
+            raise BookingError(f"Only appointments awaiting approval can be rejected (this one is {a.status}).")
+        reason = reason.strip() or "No reason given."
+        self.repo.update(appointment_id, status="REJECTED", decision_reason=f"Rejected by the gate admin: {reason}")
+        self.repo.add_event(appointment_id, "REJECTED", a.assigned_slot, None, f"Rejected by the gate admin: {reason}")
         return self.repo.get(appointment_id)
 
     def cancel(self, appointment_id: int) -> Appointment:
@@ -432,8 +514,12 @@ class GateService:
         self.repo.add_event(appointment_id, "CANCELLED", a.assigned_slot, None, "Cancelled by carrier")
         return self.repo.get(appointment_id)
 
-    def list(self) -> list[dict]:
-        return [a.to_dict() for a in self.repo.list()]
+    def list(self, truck_id: str | None = None, statuses: list[str] | None = None) -> list[dict]:
+        rows = self.repo.list(statuses)
+        if truck_id:
+            wanted = truck_id.strip().upper()
+            rows = [a for a in rows if a.truck_id.upper() == wanted]
+        return [a.to_dict() for a in rows]
 
     def events(self, appointment_id: int) -> list[dict]:
         self._require(appointment_id)
@@ -447,9 +533,12 @@ class GateService:
         window_hours: int = 4,
         start: datetime | str | None = None,
         now: datetime | None = None,
+        lane: int | None = None,
     ) -> dict:
         now = now or datetime.now()
         earliest = _next_hour(now)
+        if lane is not None and lane not in ml_models.LANE_IDS:
+            raise BookingError(f"lane must be one of {ml_models.LANE_IDS}")
         if isinstance(start, str):
             try:
                 start = datetime.fromisoformat(start)
@@ -466,6 +555,7 @@ class GateService:
             queue_spike_pct=queue_spike_pct,
             start=window_start,
             window_hours=window_hours,
+            lane=lane,
         )
 
         pool = [a for a in self.repo.list(("PENDING", "WAITLISTED"))]
@@ -508,11 +598,16 @@ class GateService:
                 }
             )
 
+        # approved bookings keep their time slot, but their gate (lane) may change; drivers are told about both
+        lane_changes = self.rebalance_lanes(now)
+        delay_notices = self._notify_delays(now)
+
         return {
             "disruption": {
                 "kind": kind,
                 "vessel_delay_hours": vessel_delay_hours,
                 "queue_spike_pct": queue_spike_pct,
+                "lane": lane,
                 "window_start": window_start.isoformat(timespec="minutes"),
                 "window_hours": window_hours,
             },
@@ -522,17 +617,14 @@ class GateService:
             "expected_wait_before_min": round(wait_before, 1),
             "expected_wait_after_min": round(wait_after, 1),
             "changes": changes,
+            "lane_changes": lane_changes,
+            "delay_notices": delay_notices,
         }
 
     def clear_disruption(self) -> None:
         self.disruption = None
 
     # -- gate monitoring ----------------------------------------------------
-    def _queues(self, slot: datetime) -> dict[int, float]:
-        """Forecast queue per lane for a slot, raised by any active disruption (vessel delay / queue spike)."""
-        uplift = self.disruption.uplift(slot) if self.disruption else 0.0
-        return {lane: q * (1 + uplift) for lane, q in ml_models.get_all_lane_forecasts(slot).items()}
-
     @staticmethod
     def _slot(day: str, hour: int) -> datetime:
         try:
@@ -566,12 +658,26 @@ class GateService:
         return rows
 
     def lane_view(self, day: str, hour: int) -> dict:
-        """Every lane at one hour: forecast queue, wait, status, and the real appointments assigned to it."""
+        """Every lane at one hour: forecast queue, wait, status, and the real appointments assigned to it.
+        Lanes closed in this hour are shown as closed with their reason."""
         slot = self._slot(day, hour)
-        queues = self._queues(slot)
+        queues = self._queues(slot, include_closed=True)
         active = [a for a in self.repo.list(ACTIVE_STATUSES) if a.assigned_slot == slot]
         lanes = []
         for lane in sorted(queues):
+            bookings = [a.to_dict() for a in active if a.lane == lane]
+            if self._is_closed(lane, slot):
+                lanes.append(
+                    {
+                        "lane": lane,
+                        "predicted_queue_length": None,
+                        "predicted_avg_wait_minutes": None,
+                        "status": "closed",
+                        "closed_reason": self._closure_reason(lane, slot),
+                        "bookings": bookings,
+                    }
+                )
+                continue
             q = round(queues[lane], 1)
             lanes.append(
                 {
@@ -579,7 +685,8 @@ class GateService:
                     "predicted_queue_length": q,
                     "predicted_avg_wait_minutes": ml_models.estimate_wait_minutes(q),
                     "status": lane_status(q),
-                    "bookings": [a.to_dict() for a in active if a.lane == lane],
+                    "closed_reason": None,
+                    "bookings": bookings,
                 }
             )
         disruption = None
@@ -588,9 +695,204 @@ class GateService:
                 "kind": self.disruption.kind,
                 "vessel_delay_hours": self.disruption.vessel_delay_hours,
                 "queue_spike_pct": self.disruption.queue_spike_pct,
+                "lane": self.disruption.lane,
                 "uplift_pct": round(self.disruption.uplift(slot) * 100),
             }
         return {"slot": slot.isoformat(timespec="minutes"), "lanes": lanes, "booked_total": len(active), "disruption": disruption}
+
+    # -- lane closures and automatic gate (lane) changes -----------------------------
+    def list_closures(self) -> list[dict]:
+        return [
+            {"lane": c.lane, "start": c.start.isoformat(timespec="minutes"), "end": c.end.isoformat(timespec="minutes"), "reason": c.reason}
+            for c in self.closures
+        ]
+
+    def close_lane(self, lane: int, hours: int = 4, start: datetime | str | None = None, reason: str = "", now: datetime | None = None) -> dict:
+        """Take a lane out of service for a window (gate admin). Drivers booked on it are moved automatically."""
+        now = now or datetime.now()
+        if lane not in ml_models.LANE_IDS:
+            raise BookingError(f"lane must be one of {ml_models.LANE_IDS}")
+        if not 1 <= hours <= 48:
+            raise BookingError("hours must be between 1 and 48")
+        if isinstance(start, str):
+            try:
+                start = datetime.fromisoformat(start)
+            except ValueError:
+                raise BookingError("start must be an ISO datetime, e.g. 2030-01-07T10:00")
+        begin = scheduler.hour_floor(start) if start else scheduler.hour_floor(now)
+        closure = LaneClosure(lane, begin, begin + timedelta(hours=hours), reason.strip() or "maintenance")
+        for h in range(hours):
+            slot = begin + timedelta(hours=h)
+            still_open = [ln for ln in ml_models.LANE_IDS if ln != lane and not self._is_closed(ln, slot)]
+            if not still_open:
+                raise BookingError("At least one lane must stay open.")
+        self.closures.append(closure)
+        return {
+            "closure": {"lane": lane, "start": begin.isoformat(timespec="minutes"), "end": closure.end.isoformat(timespec="minutes"), "reason": closure.reason},
+            "lane_changes": self.rebalance_lanes(now),
+        }
+
+    def reopen_lane(self, lane: int) -> dict:
+        before = len(self.closures)
+        self.closures = [c for c in self.closures if c.lane != lane]
+        return {"reopened": before - len(self.closures)}
+
+    def rebalance_lanes(self, now: datetime | None = None) -> list[dict]:
+        """Move drivers to a better lane when theirs closes or becomes much busier than another.
+
+        Approved bookings keep their time slot; only the gate (lane) changes, and the driver gets a notification with
+        the reason. Only upcoming hours are touched."""
+        now = now or datetime.now()
+        floor = scheduler.hour_floor(now)
+        upcoming = [
+            a for a in self.repo.list(ACTIVE_STATUSES)
+            if a.assigned_slot is not None and a.assigned_slot >= floor and a.lane is not None
+        ]
+        changes = []
+        for a in sorted(upcoming, key=lambda x: (x.assigned_slot, x.id)):
+            slot = a.assigned_slot
+            queues, loads = self._lane_loads(slot, exclude_id=a.id)
+            best = min(loads, key=lambda ln: (loads[ln], ln))
+            if a.lane not in queues:  # its lane is closed in this hour
+                reason = f"Gate {a.lane} is closed ({self._closure_reason(a.lane, slot)}); you were moved to Gate {best}."
+            elif best != a.lane and loads[a.lane] - loads[best] >= LANE_CHANGE_MIN_GAIN:
+                reason = (
+                    f"Gate {a.lane} became {lane_status(queues[a.lane])} (about {queues[a.lane]:.0f} trucks queued); "
+                    f"you were moved to Gate {best} ({queues[best]:.0f} trucks)."
+                )
+            else:
+                continue
+            old_lane = a.lane  # the in-memory repo returns live objects, so read before updating
+            self.repo.update(a.id, lane=best, predicted_clearance_minutes=self._clearance(a, slot, queues[best]))
+            self.repo.add_event(a.id, "LANE_CHANGED", slot, slot, reason)
+            changes.append(
+                {
+                    "appointment_id": a.id,
+                    "truck_id": a.truck_id,
+                    "slot": slot.isoformat(timespec="minutes"),
+                    "old_lane": old_lane,
+                    "new_lane": best,
+                    "reason": reason,
+                }
+            )
+        return changes
+
+    # -- live view for the driver -----------------------------------------------------
+    def _delay_cause(self, slot: datetime, lane: int | None) -> str | None:
+        d = self.disruption
+        if d is None or d.uplift(slot) <= 0 or (d.lane is not None and lane is not None and d.lane != lane):
+            return None
+        parts = []
+        if d.vessel_delay_hours > 0:
+            parts.append(f"a vessel delay of {d.vessel_delay_hours:g} h")
+        if d.queue_spike_pct > 0:
+            parts.append(f"a queue spike of +{d.queue_spike_pct:g}%" + (f" at Gate {d.lane}" if d.lane is not None else ""))
+        return " and ".join(parts) or "changed conditions"
+
+    def _live_wait(self, a: Appointment) -> tuple[float, float]:
+        """(normal expected wait, expected wait now) at this booking's lane."""
+        slot = a.assigned_slot
+        base_q = ml_models.get_all_lane_forecasts(slot)[a.lane]
+        live_q = self._queues(slot, include_closed=True)[a.lane]
+        return ml_models.estimate_wait_minutes(base_q), ml_models.estimate_wait_minutes(live_q)
+
+    def _notify_delays(self, now: datetime | None = None) -> int:
+        """Tell drivers whose expected wait has grown because of a disruption (once per distinct update)."""
+        now = now or datetime.now()
+        floor = scheduler.hour_floor(now)
+        sent = 0
+        for a in self.repo.list(ACTIVE_STATUSES):
+            if a.assigned_slot is None or a.lane is None or a.assigned_slot < floor or self._is_closed(a.lane, a.assigned_slot):
+                continue
+            cause = self._delay_cause(a.assigned_slot, a.lane)
+            if cause is None:
+                continue
+            base, live = self._live_wait(a)
+            if live - base < DELAY_NOTICE_MIN:
+                continue
+            message = f"Expected wait at Gate {a.lane} for your {a.assigned_slot:%H:%M} slot rose from {base:.0f} to {live:.0f} min because of {cause}."
+            events = self.repo.events(a.id)
+            if any(e["event_type"] == "DELAY_UPDATE" and e["reason"] == message for e in events[-3:]):
+                continue
+            self.repo.add_event(a.id, "DELAY_UPDATE", a.assigned_slot, a.assigned_slot, message)
+            sent += 1
+        return sent
+
+    def notifications(self, appointment_id: int, limit: int = 30) -> list[dict]:
+        """What the driver should be told, newest first (approval, gate or slot changes, delays ...)."""
+        self._require(appointment_id)
+        out = []
+        for e in reversed(self.repo.events(appointment_id)):
+            title, level = EVENT_TITLES.get(e["event_type"], (e["event_type"].replace("_", " ").title(), "info"))
+            out.append({"time": e["event_time"], "type": e["event_type"], "title": title, "level": level, "message": e["reason"]})
+        return out[:limit]
+
+    def live(self, appointment_id: int, now: datetime | None = None) -> dict:
+        """The driver's live view of one appointment: where it stands, which gate and slot, and what the gate looks like
+        for that hour right now, including how much the expected wait has moved and why."""
+        now = now or datetime.now()
+        a = self._require(appointment_id)
+        slot = a.assigned_slot
+        base = {"appointment": a.to_dict(), "notifications": self.notifications(appointment_id, 10)}
+
+        steps = {
+            "PENDING": ("awaiting_approval", "Waiting for the gate admin to approve your request."),
+            "WAITLISTED": ("waitlisted", "No slot was free. You are on the waiting list."),
+            "REJECTED": ("rejected", "The gate admin rejected this request. See the reason and book another time."),
+            "CANCELLED": ("cancelled", "This appointment was cancelled."),
+        }
+        if a.status in steps or slot is None or a.lane is None:
+            phase, step = steps.get(a.status, ("waiting", "Waiting for a slot."))
+            return {**base, "phase": phase, "next_step": step, "live": None}
+
+        base_wait, live_wait = self._live_wait(a)
+        closed = self._is_closed(a.lane, slot)
+        queue = None if closed else round(self._queues(slot, include_closed=True)[a.lane], 1)
+        delay = round(live_wait - base_wait, 1)
+        reasons = []
+        cause = self._delay_cause(slot, a.lane)
+        if cause and delay >= 1:
+            reasons.append(f"Congestion at your gate is up because of {cause}.")
+        if a.vessel_delay:
+            hours = f" {a.vessel_delay_hours:g} h" if a.vessel_delay_hours else ""
+            reasons.append(f"Your linked vessel{' ' + a.vessel_name if a.vessel_name else ''} is delayed{hours}.")
+        if closed:
+            reasons.append(f"Gate {a.lane} is closed ({self._closure_reason(a.lane, slot)}); a gate change is pending.")
+        entry = slot + timedelta(minutes=live_wait)
+        departure = entry + timedelta(minutes=a.predicted_clearance_minutes or 0)
+
+        minutes_to_slot = round((slot - now).total_seconds() / 60)
+        if minutes_to_slot > 0:
+            if a.missing_documents is None:
+                phase, step = "upload_documents", "Approved. Upload your documents before your slot."
+            elif a.missing_documents:
+                phase, step = "fix_documents", f"{a.missing_documents} document(s) are missing or flagged. Fix them before your slot."
+            else:
+                phase, step = "ready", f"All set. Arrive at Gate {a.lane} at {slot:%H:%M}."
+        elif minutes_to_slot > -60:
+            phase, step = "arrive_now", f"Your slot is now. Go to Gate {a.lane}."
+        else:
+            phase, step = "past", "Your slot has passed."
+
+        return {
+            **base,
+            "phase": phase,
+            "next_step": step,
+            "minutes_to_slot": minutes_to_slot,
+            "live": {
+                "slot": slot.isoformat(timespec="minutes"),
+                "lane": a.lane,
+                "lane_status": "closed" if closed else lane_status(queue),
+                "queue": queue,
+                "normal_wait_min": round(base_wait, 1),
+                "expected_wait_min": round(live_wait, 1),
+                "delay_min": delay,
+                "gate_entry": entry.isoformat(timespec="minutes"),
+                "departure": departure.isoformat(timespec="minutes"),
+                "reasons": reasons,
+                "monitor": {"date": slot.strftime("%Y-%m-%d"), "hour": slot.hour},
+            },
+        }
 
     # -- slot board -------------------------------------------------------
     def slot_board(self, date: str) -> list[dict]:
@@ -608,7 +910,7 @@ _service: GateService | None = None
 
 def init(repo) -> GateService:
     global _service
-    _service = GateService(repo)
+    _service = GateService(repo, require_approval=True)  # the running app: documents unlock after admin approval
     return _service
 
 

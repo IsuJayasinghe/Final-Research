@@ -57,6 +57,7 @@ class Disruption:
     queue_spike_pct: float = 0.0
     start: datetime = field(default_factory=datetime.now)
     window_hours: int = 4
+    lane: int | None = None  # None = the whole gate; a number = only that lane is affected
 
     def uplift(self, slot: datetime) -> float:
         """Fractional increase in forecast congestion for this slot (0.18 = +18%)."""

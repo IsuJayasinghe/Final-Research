@@ -6,14 +6,12 @@ import {
   ChevronRight,
   FileText,
   Loader2,
-  Package,
   ScanText,
-  Snowflake,
-  Truck,
   UploadCloud,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { useRole } from '../../lib/role'
 import {
   checkDocument,
   getAppointmentDocuments,
@@ -21,13 +19,6 @@ import {
   listAppointments,
   submitDocuments,
 } from '../../lib/gateApi'
-
-const CONTAINER_TYPES = [
-  { value: 'standard', label: 'Standard', icon: Package },
-  { value: 'reefer', label: 'Reefer', icon: Snowflake },
-  { value: 'hazardous', label: 'Hazardous', icon: AlertTriangle },
-  { value: 'oversized', label: 'Oversized', icon: Truck },
-]
 
 const BASE_DOCUMENTS = [
   { id: 'booking_confirmation', label: 'Booking Confirmation', purpose: 'Confirms container is booked to a specific vessel' },
@@ -298,26 +289,35 @@ export default function DocumentUpload() {
   const location = useLocation()
   const passed = location.state ?? {}
 
+  const { role, myTruck } = useRole()
   const [appointments, setAppointments] = useState([])
+  const [loaded, setLoaded] = useState(false)
   const [appointmentId, setAppointmentId] = useState(passed.appointmentId ? String(passed.appointmentId) : '')
-  const [manual, setManual] = useState({
-    containerId: passed.containerId ?? '',
-    truckId: passed.truckId ?? '',
-    containerType: passed.containerType ?? 'standard',
-  })
   const [results, setResults] = useState({})
   const [submitting, setSubmitting] = useState(false)
   const [outcome, setOutcome] = useState(null)
   const [error, setError] = useState(null)
 
+  // a driver sees their own bookings; documents can only be uploaded once the gate admin has approved one
   useEffect(() => {
-    listAppointments()
+    listAppointments(role === 'driver' && myTruck ? { truckId: myTruck } : {})
       .then((rows) => setAppointments(rows.filter((r) => r.status === 'PENDING' || r.status === 'CONFIRMED')))
       .catch(() => setError('Could not reach the gate appointment service. Is the backend running?'))
-  }, [])
+      .finally(() => setLoaded(true))
+  }, [role, myTruck])
 
-  const appointment = appointments.find((a) => String(a.id) === appointmentId)
-  const containerType = appointment?.container_type ?? manual.containerType
+  const approved = appointments.filter((a) => a.status === 'CONFIRMED')
+  const waiting = appointments.filter((a) => a.status === 'PENDING')
+  const appointment = approved.find((a) => String(a.id) === appointmentId)
+  const containerType = appointment?.container_type ?? 'standard'
+
+  // default to the approved appointment named in the link, otherwise the first approved one
+  useEffect(() => {
+    if (!loaded) return
+    if (!approved.some((a) => String(a.id) === appointmentId)) {
+      setAppointmentId(approved[0] ? String(approved[0].id) : '')
+    }
+  }, [loaded, appointments]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // restore verdicts already recorded for the chosen appointment
   useEffect(() => {
@@ -355,10 +355,7 @@ export default function DocumentUpload() {
       const verdict = await checkDocument({
         file,
         docKey,
-        appointmentId: appointmentId || null,
-        containerId: manual.containerId,
-        truckId: manual.truckId,
-        containerType,
+        appointmentId,
       })
       setResults((prev) => ({ ...prev, [docKey]: verdict }))
     } catch (err) {
@@ -397,89 +394,66 @@ export default function DocumentUpload() {
         shown immediately - so the gate step is a quick final verification, not a full document check.
       </p>
 
-      <div className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <label htmlFor="appointment" className="block text-sm font-medium text-gray-700">
-          Appointment
-        </label>
-        <select
-          id="appointment"
-          value={appointmentId}
-          onChange={(e) => setAppointmentId(e.target.value)}
-          className={INPUT_CLASS}
-        >
-          <option value="">No appointment yet - just check my documents</option>
-          {appointments.map((a) => (
-            <option key={a.id} value={a.id}>
-              #{a.id} · {a.truck_id} · {a.container_id} · {a.container_type} · {slotLabel(a.assigned_slot)}
-            </option>
-          ))}
-        </select>
-
-        {appointment ? (
-          <p className="mt-3 text-xs text-gray-600">
-            Documents are checked against this booking: container <b>{appointment.container_id}</b>, truck{' '}
-            <b>{appointment.truck_id}</b>, date <b>{appointment.assigned_slot?.slice(0, 10)}</b>.
-          </p>
-        ) : (
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="containerId" className="block text-sm font-medium text-gray-700">
-                Container ID
-              </label>
-              <input
-                id="containerId"
-                value={manual.containerId}
-                onChange={(e) => setManual((m) => ({ ...m, containerId: e.target.value }))}
-                placeholder="CSQU3054383"
-                className={INPUT_CLASS}
-              />
-            </div>
-            <div>
-              <label htmlFor="truckId" className="block text-sm font-medium text-gray-700">
-                Truck ID
-              </label>
-              <input
-                id="truckId"
-                value={manual.truckId}
-                onChange={(e) => setManual((m) => ({ ...m, truckId: e.target.value }))}
-                placeholder="TRK-80579"
-                className={INPUT_CLASS}
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <span className="block text-sm font-medium text-gray-700">Container Type</span>
-              <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {CONTAINER_TYPES.map(({ value, label, icon: Icon }) => (
-                  <label
-                    key={value}
-                    className={`flex cursor-pointer flex-col items-center gap-1.5 rounded-lg border px-3 py-3 text-sm transition-colors ${
-                      manual.containerType === value
-                        ? 'border-[#123a5c] bg-[#123a5c]/5 text-[#123a5c]'
-                        : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="containerType"
-                      value={value}
-                      checked={manual.containerType === value}
-                      onChange={(e) => setManual((m) => ({ ...m, containerType: e.target.value }))}
-                      className="sr-only"
-                    />
-                    <Icon className="h-5 w-5" />
-                    {label}
-                  </label>
-                ))}
-              </div>
-            </div>
+      {loaded && approved.length === 0 ? (
+        <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50 p-6 text-sm text-blue-900">
+          <p className="text-base font-semibold">Document upload opens once the gate admin approves your appointment</p>
+          {waiting.length > 0 ? (
+            <ul className="mt-3 space-y-1 text-xs">
+              {waiting.map((a) => (
+                <li key={a.id}>
+                  Request #{a.id} · {a.truck_id} · {a.container_id} · {slotLabel(a.assigned_slot)} -{' '}
+                  <b>waiting for approval</b>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-xs">You have no appointment waiting. Book one first.</p>
+          )}
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Link
+              to="/my-trip"
+              className="rounded-md bg-[#123a5c] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0e2d47]"
+            >
+              Follow my request on My Trip
+            </Link>
+            <Link to="/gate-appointment" className="rounded-md border border-[#123a5c] px-3 py-1.5 text-xs font-semibold text-[#123a5c]">
+              Request an appointment
+            </Link>
           </div>
-        )}
-        {(containerType === 'reefer' || containerType === 'hazardous') && (
-          <p className="mt-3 text-xs text-amber-600">
-            This cargo type requires an additional special cargo document below.
-          </p>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          <label htmlFor="appointment" className="block text-sm font-medium text-gray-700">
+            Approved appointment
+          </label>
+          <select
+            id="appointment"
+            value={appointmentId}
+            onChange={(e) => setAppointmentId(e.target.value)}
+            className={INPUT_CLASS}
+          >
+            {approved.map((a) => (
+              <option key={a.id} value={a.id}>
+                #{a.id} · {a.truck_id} · {a.container_id} · {a.container_type} · {slotLabel(a.assigned_slot)}
+              </option>
+            ))}
+          </select>
+          {appointment && (
+            <p className="mt-3 text-xs text-gray-600">
+              Documents are checked against this booking: container <b>{appointment.container_id}</b>, truck{' '}
+              <b>{appointment.truck_id}</b>, date <b>{appointment.assigned_slot?.slice(0, 10)}</b>.
+            </p>
+          )}
+          {waiting.length > 0 && (
+            <p className="mt-2 text-xs text-gray-500">{waiting.length} other request(s) are still waiting for approval.</p>
+          )}
+          {(containerType === 'reefer' || containerType === 'hazardous') && (
+            <p className="mt-3 text-xs text-amber-600">
+              This cargo type requires an additional special cargo document below.
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="mt-6 flex items-center justify-between">
         <p className="flex items-center gap-2 text-sm font-medium text-gray-700">

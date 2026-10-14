@@ -91,7 +91,7 @@ def test_confirm_and_cancel_lifecycle(svc):
         svc.cancel(1)
     with pytest.raises(BookingError):
         svc.confirm(99)
-    assert [e["event_type"] for e in svc.events(1)] == ["ASSIGNED", "CONFIRMED", "CANCELLED"]
+    assert [e["event_type"] for e in svc.events(1)] == ["ASSIGNED", "APPROVED", "CANCELLED"]
 
 
 def test_cancelled_booking_frees_capacity(svc):
@@ -511,3 +511,74 @@ def test_monitor_rejects_bad_dates_and_hours(svc):
         svc.lane_view(DATE, 25)
     with pytest.raises(BookingError):
         svc.congestion_profile("2030-13-45")
+
+
+# ---- gate-admin approval: the driver waits, documents unlock only after approval -------------------------------
+
+@pytest.fixture
+def strict():
+    """The running app's configuration: documents need an approved appointment."""
+    return GateService(MemoryRepository(), require_approval=True)
+
+
+def test_a_new_request_waits_for_the_gate_admin(strict):
+    a = bare_booking(strict)["appointment"]
+    assert a["status"] == "PENDING"  # awaiting approval
+    assert strict.repo.events(a["id"])[0]["event_type"] == "ASSIGNED"
+
+
+def test_documents_are_locked_until_the_gate_admin_approves(strict):
+    aid = bare_booking(strict)["appointment"]["id"]
+    with pytest.raises(BookingError, match="gate admin approves"):
+        strict.check_document(b"x", "a.png", "vgm", appointment_id=aid)
+    with pytest.raises(BookingError, match="waiting for the gate admin"):
+        strict.submit_documents(aid)
+    strict.approve(aid)
+    # past the gate: the (bad) file is now judged on its content instead of being refused for approval
+    with pytest.raises(documents.DocumentError):
+        strict.check_document(b"x", "a.png", "vgm", appointment_id=aid)
+
+
+def test_approval_fixes_the_slot_and_logs_an_event(strict):
+    aid = bare_booking(strict)["appointment"]["id"]
+    a = strict.approve(aid, note="Looks fine.")
+    assert a.status == "CONFIRMED"
+    event = strict.repo.events(aid)[-1]
+    assert event["event_type"] == "APPROVED" and "Looks fine." in event["reason"] and "upload your documents" in event["reason"].lower()
+    with pytest.raises(BookingError):
+        strict.approve(aid)  # already approved
+
+
+def test_rejected_request_frees_the_slot_and_shows_the_reason(strict):
+    first = bare_booking(strict)["appointment"]
+    slot = first["assigned_slot"]
+    out = strict.reject(first["id"], "Gate closed for maintenance in that hour.")
+    assert out.status == "REJECTED" and "maintenance" in out.decision_reason
+    assert strict.repo.events(first["id"])[-1]["event_type"] == "REJECTED"
+    assert strict.lane_view(slot[:10], int(slot[11:13]))["booked_total"] == 0  # no longer counts against the slot
+    with pytest.raises(BookingError, match="gate admin has rejected|rejected by the gate admin"):
+        strict.check_document(b"x", "a.png", "vgm", appointment_id=first["id"])
+    with pytest.raises(BookingError):
+        strict.approve(first["id"])  # a rejected request cannot be approved afterwards
+
+
+def test_a_blank_rejection_reason_still_says_something(strict):
+    aid = bare_booking(strict)["appointment"]["id"]
+    assert "No reason given" in strict.reject(aid).decision_reason
+
+
+def test_cancelled_appointments_cannot_be_approved_or_rejected(strict):
+    aid = bare_booking(strict)["appointment"]["id"]
+    strict.cancel(aid)
+    with pytest.raises(BookingError):
+        strict.approve(aid)
+    with pytest.raises(BookingError):
+        strict.reject(aid, "x")
+
+
+def test_a_driver_can_look_up_only_their_own_truck(strict):
+    bare_booking(strict, i=1, truck_id="TRK-111")
+    bare_booking(strict, i=2, truck_id="TRK-222")
+    mine = strict.list(truck_id=" trk-111 ")
+    assert [a["truck_id"] for a in mine] == ["TRK-111"]
+    assert len(strict.list()) == 2 and strict.list(statuses=["CONFIRMED"]) == []

@@ -4,7 +4,6 @@ import {
   ArrowRight,
   ArrowUp,
   CalendarDays,
-  CheckCircle2,
   Clock,
   Loader2,
   MapPin,
@@ -16,11 +15,13 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   cancelAppointment,
-  confirmAppointment,
   createAppointment,
   getCarriers,
+  getCongestionProfile,
   getWeather,
 } from '../../lib/gateApi'
+import HourChart, { Legend, STATUS, pad } from '../../components/HourChart'
+import { useRole } from '../../lib/role'
 
 const CONTAINER_TYPES = [
   { value: 'standard', label: 'Standard', icon: Package },
@@ -102,6 +103,8 @@ export default function GateAppointment() {
     preferredDate: tomorrowDate(),
     arrivalHour: 9,
   })
+  const { setMyTruck } = useRole()
+  const [dayProfile, setDayProfile] = useState([]) // how busy the gate is each hour of the chosen date
   const [carriers, setCarriers] = useState(FALLBACK_CARRIERS)
   const [forecast, setForecast] = useState(null) // weather forecast for the chosen arrival date
   const [status, setStatus] = useState('idle') // idle | assigning | assigned | error
@@ -132,7 +135,25 @@ export default function GateAppointment() {
     }
   }, [form.preferredDate])
 
+  // the driver looks at the gate first: expected congestion for every hour of the chosen date
+  useEffect(() => {
+    let cancelled = false
+    getCongestionProfile(form.preferredDate)
+      .then((p) => !cancelled && setDayProfile(p))
+      .catch(() => !cancelled && setDayProfile([]))
+    return () => {
+      cancelled = true
+    }
+  }, [form.preferredDate])
+
   const profile = carriers.find((c) => c.carrier === form.carrier)
+  const chosenHour = Number(form.arrivalHour)
+  const chosenRow = dayProfile.find((r) => r.hour === chosenHour)
+  const quieter = chosenRow
+    ? dayProfile
+        .filter((r) => Math.abs(r.hour - chosenHour) <= 3 && r.max_lane_queue < chosenRow.max_lane_queue - 2)
+        .sort((a, b) => a.max_lane_queue - b.max_lane_queue)[0]
+    : null
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -141,6 +162,7 @@ export default function GateAppointment() {
     setLifecycle(null)
     try {
       setResult(await createAppointment(form))
+      setMyTruck(form.truckId) // remembered so My Trip opens straight to this booking
       setStatus('assigned')
     } catch (err) {
       setError(
@@ -174,14 +196,112 @@ export default function GateAppointment() {
     <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
       <h1 className="text-2xl font-bold text-[#123a5c]">Request a Gate Appointment</h1>
       <p className="mt-1 text-sm text-gray-600">
-        Your booking is scored for no-show risk, placed in the best hourly slot (overbooking only
-        where predicted no-shows make it safe), assigned the shortest-queue lane, and saved.
+        Look at how busy the gate is, pick a time, and enter your truck details. The gate admin then
+        approves your request, and once approved you upload your documents and follow your trip live.
       </p>
 
       <form
         onSubmit={handleSubmit}
         className="mt-8 grid gap-5 rounded-xl border border-gray-200 bg-white p-6 shadow-sm sm:grid-cols-2"
       >
+        <div className="sm:col-span-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-[#123a5c]">
+            1. Check the gate and pick your time
+          </h2>
+          <p className="mt-1 text-xs text-gray-500">
+            Each bar is one hour of your chosen date: how busy the gate is expected to be. Click an hour to choose it.
+            Quieter hours mean shorter waits.
+          </p>
+        </div>
+
+        <div>
+          <label htmlFor="preferredDate" className="block text-sm font-medium text-gray-700">
+            Planned Arrival Date
+          </label>
+          <input
+            id="preferredDate"
+            type="date"
+            min={today()}
+            value={form.preferredDate}
+            onChange={updateField('preferredDate')}
+            className={INPUT_CLASS}
+          />
+        </div>
+
+        <div>
+          <label htmlFor="arrivalHour" className="block text-sm font-medium text-gray-700">
+            Planned Arrival Hour
+          </label>
+          <select
+            id="arrivalHour"
+            value={form.arrivalHour}
+            onChange={updateField('arrivalHour')}
+            className={INPUT_CLASS}
+          >
+            {HOURS.map((h) => (
+              <option key={h.value} value={h.value}>
+                {h.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="sm:col-span-2">
+          {dayProfile.length === 0 ? (
+            <p className="text-xs text-gray-500">Loading the gate forecast for this date...</p>
+          ) : (
+            <>
+              <HourChart
+                profile={dayProfile}
+                hour={chosenHour}
+                onPick={(h) => setForm((prev) => ({ ...prev, arrivalHour: h }))}
+                height="h-24"
+              />
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-600">
+                <span>
+                  {chosenRow && (
+                    <>
+                      {pad(chosenHour)}:00 is expected to be{' '}
+                      <b className={STATUS[chosenRow.status].text}>{STATUS[chosenRow.status].label.toLowerCase()}</b> (about{' '}
+                      {chosenRow.avg_wait_minutes} min wait).
+                    </>
+                  )}
+                  {quieter && (
+                    <>
+                      {' '}
+                      Tip: <b>{pad(quieter.hour)}:00</b> is quieter (about {quieter.avg_wait_minutes} min).
+                    </>
+                  )}
+                </span>
+                <Legend />
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700 sm:col-span-2">
+          <span className="font-semibold text-[#123a5c]">Weather forecast for your arrival day: </span>
+          {forecast === null ? (
+            'loading...'
+          ) : forecast.severity === null ? (
+            <>
+              not available for this date. The seasonal typical weather will be assumed.
+            </>
+          ) : (
+            <>
+              <b>{forecast.label}</b>
+              {forecast.precipitation_mm != null && <> ({forecast.precipitation_mm} mm rain expected)</>} - from the
+              Open-Meteo forecast for the port.
+            </>
+          )}
+        </div>
+
+        <div className="sm:col-span-2 border-t border-gray-100 pt-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-[#123a5c]">
+            2. Your truck and container
+          </h2>
+        </div>
+
         <div>
           <label htmlFor="truckId" className="block text-sm font-medium text-gray-700">
             Truck ID
@@ -271,55 +391,6 @@ export default function GateAppointment() {
           </div>
         </div>
 
-        <div>
-          <label htmlFor="preferredDate" className="block text-sm font-medium text-gray-700">
-            Planned Arrival Date
-          </label>
-          <input
-            id="preferredDate"
-            type="date"
-            min={today()}
-            value={form.preferredDate}
-            onChange={updateField('preferredDate')}
-            className={INPUT_CLASS}
-          />
-        </div>
-
-        <div>
-          <label htmlFor="arrivalHour" className="block text-sm font-medium text-gray-700">
-            Planned Arrival Hour
-          </label>
-          <select
-            id="arrivalHour"
-            value={form.arrivalHour}
-            onChange={updateField('arrivalHour')}
-            className={INPUT_CLASS}
-          >
-            {HOURS.map((h) => (
-              <option key={h.value} value={h.value}>
-                {h.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700 sm:col-span-2">
-          <span className="font-semibold text-[#123a5c]">Weather forecast for your arrival day: </span>
-          {forecast === null ? (
-            'loading...'
-          ) : forecast.severity === null ? (
-            <>
-              not available for this date. The seasonal typical weather will be assumed.
-            </>
-          ) : (
-            <>
-              <b>{forecast.label}</b>
-              {forecast.precipitation_mm != null && <> ({forecast.precipitation_mm} mm rain expected)</>} - from the
-              Open-Meteo forecast for the port.
-            </>
-          )}
-        </div>
-
         <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-900 sm:col-span-2">
           <b>Nothing else is typed in.</b> Carrier reliability comes from the carrier&apos;s history, weather from the
           forecast, and the customs risk, missing documents and linked-vessel delay are read from your documents
@@ -365,11 +436,9 @@ export default function GateAppointment() {
             >
               {waitlisted
                 ? 'Waitlisted - no nearby slot has spare capacity'
-                : lifecycle === 'CONFIRMED'
-                  ? 'Appointment Confirmed'
-                  : lifecycle === 'CANCELLED'
-                    ? 'Appointment Cancelled'
-                    : `Appointment #${appt.id} Booked - awaiting your confirmation`}
+                : lifecycle === 'CANCELLED'
+                  ? 'Request cancelled'
+                  : `Request #${appt.id} sent - waiting for the gate admin to approve`}
             </p>
             {appt.overbooked && (
               <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
@@ -527,52 +596,44 @@ export default function GateAppointment() {
             </div>
           )}
 
+          {!waitlisted && !lifecycle && (
+            <div className="mt-5 rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
+              <p className="font-semibold">What happens next</p>
+              <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs">
+                <li>The gate admin reviews your request. This slot and gate are provisional until then.</li>
+                <li>Once approved, document upload opens for you. You will see it on My Trip.</li>
+                <li>
+                  Upload your documents, then follow your trip live: your gate, the queue at that hour, and any delay
+                  or gate change, with the reason.
+                </li>
+              </ol>
+            </div>
+          )}
+
           <div className="mt-5 flex flex-wrap items-center gap-3">
             {!waitlisted && !lifecycle && (
               <>
-                <button
-                  type="button"
-                  disabled={actionBusy}
-                  onClick={() => runAction(confirmAppointment, 'CONFIRMED')}
-                  className="inline-flex items-center gap-2 rounded-md bg-[#123a5c] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#0e2d47] disabled:opacity-70"
+                <Link
+                  to="/my-trip"
+                  className="inline-flex items-center gap-2 rounded-md bg-[#123a5c] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#0e2d47]"
                 >
-                  <CheckCircle2 className="h-4 w-4" />
-                  Confirm appointment
-                </button>
+                  Track my trip
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
                 <button
                   type="button"
                   disabled={actionBusy}
                   onClick={() => runAction(cancelAppointment, 'CANCELLED')}
                   className="rounded-md border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-70"
                 >
-                  Cancel
+                  Cancel request
                 </button>
               </>
             )}
-            {lifecycle === 'CONFIRMED' && (
-              <Link
-                to="/document-upload"
-                state={{
-                  appointmentId: appt.id,
-                  containerId: form.containerId,
-                  truckId: form.truckId,
-                  containerType: form.containerType,
-                }}
-                className="inline-flex items-center gap-2 rounded-md bg-[#123a5c] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#0e2d47]"
-              >
-                Continue to Document Upload
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            )}
-            <Link to="/appointments" className="text-sm font-medium text-[#123a5c] hover:underline">
-              View all appointments
+            <Link to="/gate-allocation" className="text-sm font-medium text-[#123a5c] hover:underline">
+              See the gate
             </Link>
           </div>
-          {!waitlisted && !lifecycle && (
-            <p className="mt-2 text-xs text-gray-500">
-              Unconfirmed bookings may be moved if conditions change; confirmed bookings stay fixed.
-            </p>
-          )}
         </div>
       )}
     </div>

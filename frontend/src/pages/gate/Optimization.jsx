@@ -57,6 +57,7 @@ export default function Optimization() {
     windowHours: 1,
     vesselDelayHours: 4,
     queueSpikePct: 0,
+    lane: '',
   })
   const [running, setRunning] = useState(false)
   const [outcome, setOutcome] = useState(null)
@@ -93,6 +94,7 @@ export default function Optimization() {
         await reoptimize({
           vesselDelayHours: disruption.vesselDelayHours,
           queueSpikePct: disruption.queueSpikePct,
+          lane: disruption.lane,
           windowHours: disruption.windowHours,
           start: `${date}T${hour}:00`,
         }),
@@ -252,6 +254,19 @@ export default function Optimization() {
                   className={INPUT_CLASS}
                 />
               </div>
+              <div className="col-span-2">
+                <label htmlFor="d-lane" className="block text-xs font-medium text-gray-600">
+                  Affects
+                </label>
+                <select id="d-lane" value={disruption.lane} onChange={setField('lane')} className={INPUT_CLASS}>
+                  <option value="">The whole gate</option>
+                  {[1, 2, 3, 4, 5, 6].map((n) => (
+                    <option key={n} value={n}>
+                      Only Gate {n}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
               <button
@@ -302,9 +317,25 @@ export default function Optimization() {
                   </dd>
                 </div>
               </dl>
+              {(outcome.lane_changes?.length > 0 || outcome.delay_notices > 0) && (
+                <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                  <p className="font-semibold">Drivers notified automatically</p>
+                  {outcome.delay_notices > 0 && <p className="mt-1">{outcome.delay_notices} driver(s) told their expected wait has grown.</p>}
+                  {outcome.lane_changes?.length > 0 && (
+                    <ul className="mt-1 space-y-1">
+                      {outcome.lane_changes.slice(0, 5).map((c) => (
+                        <li key={c.appointment_id}>
+                          #{c.appointment_id} {c.truck_id}: Gate {c.old_lane} &rarr; Gate {c.new_lane} ({hhmm(c.slot)}, same time). {c.reason}
+                        </li>
+                      ))}
+                      {outcome.lane_changes.length > 5 && <li>+ {outcome.lane_changes.length - 5} more gate changes</li>}
+                    </ul>
+                  )}
+                </div>
+              )}
               {outcome.changes.length === 0 ? (
                 <p className="mt-4 text-sm text-gray-600">
-                  No booking needed to move - the disruption was cheaper to absorb than to reshuffle.
+                  No booking needed to change its time - the disruption was cheaper to absorb than to reshuffle.
                 </p>
               ) : (
                 <ul className="mt-4 space-y-3">

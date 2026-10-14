@@ -26,7 +26,9 @@ from schemas import (
     ClearanceResponse,
     CongestionResponse,
     DisruptionRequest,
+    LaneCloseRequest,
     LaneCongestion,
+    RejectRequest,
     ModelInputs,
 )
 
@@ -161,6 +163,8 @@ def assign_appointment(request: AppointmentRequest):
 def _run(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
+    except service.NotApproved as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except service.BookingError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -173,8 +177,10 @@ def create_appointment(request: BookingRequest):
 
 
 @router.get("/appointments")
-def list_appointments():
-    return service.get_service().list()
+def list_appointments(truck_id: str | None = None, status: str | None = None):
+    """Saved appointments, optionally only one truck's (a driver looks up their own) or one status."""
+    statuses = [s.strip().upper() for s in status.split(",")] if status else None
+    return service.get_service().list(truck_id=truck_id, statuses=statuses)
 
 
 @router.get("/appointments/{appointment_id}/events")
@@ -182,14 +188,61 @@ def appointment_events(appointment_id: int):
     return _run(service.get_service().events, appointment_id)
 
 
+@router.post("/appointments/{appointment_id}/approve")
+def approve_appointment(appointment_id: int):
+    """Gate admin approves the request; the driver can then upload documents."""
+    return _run(service.get_service().approve, appointment_id).to_dict()
+
+
 @router.post("/appointments/{appointment_id}/confirm")
 def confirm_appointment(appointment_id: int):
-    return _run(service.get_service().confirm, appointment_id).to_dict()
+    """Same as approve (kept for older clients)."""
+    return _run(service.get_service().approve, appointment_id).to_dict()
+
+
+@router.post("/appointments/{appointment_id}/reject")
+def reject_appointment(appointment_id: int, body: RejectRequest):
+    """Gate admin declines the request with a reason the driver will see."""
+    return _run(service.get_service().reject, appointment_id, body.reason).to_dict()
 
 
 @router.post("/appointments/{appointment_id}/cancel")
 def cancel_appointment(appointment_id: int):
     return _run(service.get_service().cancel, appointment_id).to_dict()
+
+
+@router.get("/appointments/{appointment_id}/live")
+def appointment_live(appointment_id: int):
+    """The driver's live view: status, gate and slot, the gate's current queue for that hour, delay and why."""
+    return _run(service.get_service().live, appointment_id)
+
+
+@router.get("/appointments/{appointment_id}/notifications")
+def appointment_notifications(appointment_id: int):
+    """What the driver has been told (approval, gate or slot changes, delays), newest first."""
+    return _run(service.get_service().notifications, appointment_id)
+
+
+@router.post("/lanes/{lane}/close")
+def close_lane(lane: int, request: LaneCloseRequest):
+    """Gate admin takes a lane out of service; drivers booked on it are moved to another gate with a notification."""
+    return _run(service.get_service().close_lane, lane, request.hours, request.start, request.reason)
+
+
+@router.delete("/lanes/{lane}/close")
+def reopen_lane(lane: int):
+    return service.get_service().reopen_lane(lane)
+
+
+@router.get("/lanes/closures")
+def lane_closures():
+    return service.get_service().list_closures()
+
+
+@router.post("/rebalance")
+def rebalance_lanes():
+    """Re-check every upcoming booking and move drivers to a lighter lane where it is clearly better."""
+    return {"lane_changes": service.get_service().rebalance_lanes()}
 
 
 @router.post("/reoptimize")
@@ -256,6 +309,8 @@ def check_document(
         return service.get_service().check_document(data, file.filename or "", doc_key, appointment_id, ctx)
     except documents.DocumentError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except service.NotApproved as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except service.BookingError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ImportError:

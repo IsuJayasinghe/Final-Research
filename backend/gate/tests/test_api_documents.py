@@ -83,6 +83,11 @@ def test_full_flow_over_http_book_check_submit(client, sample_dir):
     aid = created.json()["appointment"]["id"]
     before = created.json()["risk"]["p_no_show"]
 
+    # documents are locked until the gate admin approves the request
+    locked = post_doc(client, sample_dir, "vgm", "vgm", appointment_id=aid)
+    assert locked.status_code == 409 and "gate admin approves" in locked.json()["detail"]
+    assert client.post(f"/api/appointments/{aid}/approve").status_code == 200
+
     slots = {"booking_confirmation": "booking_confirmation", "cusdec": "cusdec", "gate_pass": "gate_pass", "vgm": "vgm",
              "seal_photo": "seal_match", "driver_docs": "driver_docs", "special_cargo": "special_cargo"}
     for name, slot in slots.items():
@@ -156,3 +161,63 @@ def test_monitor_endpoints_over_http(client):
     view = client.get("/api/lane-view?date=2031-03-12&hour=16").json()
     assert len(view["lanes"]) == 6 and all(l["status"] == "congested" or l["status"] == "busy" for l in view["lanes"])
     assert client.get("/api/lane-view?date=2031-03-12&hour=99").status_code == 422
+
+
+def test_approval_endpoints_over_http(client):
+    booking = {"truck_id": "TRK-APR1", "container_id": "CSQU3054383", "carrier": "Carrier-A", "cargo_category": "export",
+               "container_type": "standard", "arrival_date": "2031-03-14", "arrival_hour": 11}
+    one = client.post("/api/appointments", json=booking).json()["appointment"]
+    two = client.post("/api/appointments", json={**booking, "truck_id": "TRK-APR2"}).json()["appointment"]
+    assert one["status"] == "PENDING"
+    assert client.post(f"/api/appointments/{one['id']}/approve").json()["status"] == "CONFIRMED"
+    rejected = client.post(f"/api/appointments/{two['id']}/reject", json={"reason": "Over capacity"}).json()
+    assert rejected["status"] == "REJECTED" and "Over capacity" in rejected["decision_reason"]
+    assert client.post(f"/api/appointments/{two['id']}/approve").status_code == 422
+    mine = client.get("/api/appointments?truck_id=trk-apr1").json()
+    assert [a["id"] for a in mine] == [one["id"]]
+    assert {a["status"] for a in client.get("/api/appointments?status=REJECTED,CONFIRMED").json()} <= {"REJECTED", "CONFIRMED"}
+    assert client.post("/api/appointments/99999/approve").status_code == 422
+
+
+def test_gate_change_and_live_endpoints_over_http(client):
+    day = "2031-04-07"
+    booking = {"truck_id": "TRK-LIVE1", "container_id": "CSQU3054383", "carrier": "Carrier-A", "cargo_category": "export",
+               "container_type": "standard", "arrival_date": day, "arrival_hour": 10, "weather_severity": 0, "vessel_delay": False}
+    appt = client.post("/api/appointments", json=booking).json()["appointment"]
+    aid, lane = appt["id"], appt["lane"]
+    slot_hour = int(appt["assigned_slot"][11:13])
+    assert client.post(f"/api/appointments/{aid}/approve").status_code == 200
+    try:
+        live = client.get(f"/api/appointments/{aid}/live").json()
+        assert live["phase"] == "upload_documents" and live["live"]["lane"] == lane
+        assert live["live"]["delay_min"] == 0 and live["live"]["monitor"]["date"] == day
+
+        closed = client.post(f"/api/lanes/{lane}/close", json={"hours": 2, "start": f"{day}T{slot_hour:02d}:00", "reason": "breakdown"})
+        assert closed.status_code == 200 and closed.json()["lane_changes"][0]["appointment_id"] == aid
+        assert client.get("/api/lanes/closures").json()[0]["reason"] == "breakdown"
+        moved = client.get(f"/api/appointments/{aid}/live").json()
+        assert moved["live"]["lane"] != lane and moved["notifications"][0]["type"] == "LANE_CHANGED"
+        view = client.get(f"/api/lane-view?date={day}&hour={slot_hour}").json()
+        assert view["lanes"][lane - 1]["status"] == "closed"
+        notes = client.get(f"/api/appointments/{aid}/notifications").json()
+        assert [n["type"] for n in notes][:2] == ["LANE_CHANGED", "APPROVED"]
+
+        assert client.delete(f"/api/lanes/{lane}/close").json() == {"reopened": 1}
+        assert client.post("/api/lanes/9/close", json={"hours": 2}).status_code == 422
+        assert client.post("/api/lanes/2/close", json={"hours": 99}).status_code == 422
+
+        out = client.post("/api/reoptimize", json={"queue_spike_pct": 200, "window_hours": 1, "start": f"{day}T{slot_hour:02d}:00",
+                                                    "lane": moved["live"]["lane"]})
+        assert out.status_code == 200 and out.json()["disruption"]["lane"] == moved["live"]["lane"]
+        assert client.post("/api/reoptimize", json={"queue_spike_pct": 10, "lane": 9}).status_code == 422
+        assert "lane_changes" in client.post("/api/rebalance").json()
+    finally:
+        for ln in range(1, 7):
+            client.delete(f"/api/lanes/{ln}/close")
+        client.delete("/api/disruption")
+        client.post(f"/api/appointments/{aid}/cancel")
+
+
+def test_live_endpoint_for_an_unknown_appointment(client):
+    assert client.get("/api/appointments/987654/live").status_code == 422
+    assert client.get("/api/appointments/987654/notifications").status_code == 422
