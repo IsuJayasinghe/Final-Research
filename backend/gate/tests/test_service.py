@@ -426,3 +426,88 @@ def test_submit_reports_how_complete_each_document_is(svc, sample_dir):
     assert out["missing"] == 1, flagged  # only the incomplete booking confirmation fails
     stored = __import__("json").loads(svc.repo.submissions(aid)[0]["clearance_information"])
     assert stored["completeness"]["vgm"] == 1.0 and "booking_confirmation" in stored["missing_details"]
+
+
+# ---- lane allocation spreads a busy hour across the lanes ----------------------------------------------------
+
+def test_bookings_in_one_hour_spread_across_lanes_instead_of_piling_onto_one(svc):
+    lanes = [bare_booking(svc, i=i, truck_id=f"TRK-{i}")["appointment"]["lane"] for i in range(1, 7)]
+    assert len(set(lanes)) >= 4, lanes  # six trucks in the same hour do not all get the same lane
+    one_lane = max(lanes.count(x) for x in set(lanes))
+    assert one_lane <= 2
+
+
+def test_first_booking_still_gets_the_quietest_lane(svc):
+    first = bare_booking(svc)
+    forecasts = {l["lane"]: l["predicted_queue_length"] for l in first["lanes"]}
+    assert first["appointment"]["lane"] == min(forecasts, key=lambda ln: (forecasts[ln], ln))
+
+
+def test_a_cancelled_booking_frees_its_lane_slot(svc):
+    ids = [bare_booking(svc, i=i, truck_id=f"TRK-{i}")["appointment"] for i in range(1, 4)]
+    taken = ids[0]["lane"]
+    svc.cancel(ids[0]["id"])
+    again = bare_booking(svc, i=9, truck_id="TRK-9")["appointment"]["lane"]
+    assert again == taken  # the lane is free again, so it is the quietest choice once more
+
+
+# ---- gate monitoring: hourly busy profile and per-lane view ------------------------------------------------
+
+def test_profile_shows_quiet_nights_and_a_congested_afternoon(svc):
+    rows = svc.congestion_profile(DATE)
+    assert [r["hour"] for r in rows] == list(range(24))
+    by_hour = {r["hour"]: r for r in rows}
+    assert by_hour[3]["status"] == "normal" and by_hour[3]["max_lane_queue"] < 4
+    assert by_hour[16]["status"] == "congested" and by_hour[16]["max_lane_queue"] >= 8
+    assert by_hour[16]["avg_wait_minutes"] > by_hour[3]["avg_wait_minutes"] * 5
+    peak = max(rows, key=lambda r: r["max_lane_queue"])
+    assert 12 <= peak["hour"] <= 18  # the busy period of the day
+
+
+def test_status_thresholds():
+    from service import lane_status
+
+    assert [lane_status(q) for q in (0, 3.9, 4, 7.9, 8, 15)] == ["normal", "normal", "busy", "busy", "congested", "congested"]
+
+
+def test_lane_view_lists_the_real_bookings_on_each_lane(svc):
+    made = [bare_booking(svc, i=i, truck_id=f"TRK-{i}")["appointment"] for i in range(1, 5)]
+    slot = made[0]["assigned_slot"]
+    view = svc.lane_view(slot[:10], int(slot[11:13]))
+    assert view["booked_total"] == 4 and len(view["lanes"]) == 6
+    listed = {b["id"] for lane in view["lanes"] for b in lane["bookings"]}
+    assert listed == {a["id"] for a in made}
+    for lane in view["lanes"]:
+        assert all(b["lane"] == lane["lane"] for b in lane["bookings"])
+        assert lane["status"] in ("normal", "busy", "congested")
+
+
+def test_lane_view_ignores_cancelled_and_other_hours(svc):
+    a = bare_booking(svc)["appointment"]
+    slot = a["assigned_slot"]
+    svc.cancel(a["id"])
+    assert svc.lane_view(slot[:10], int(slot[11:13]))["booked_total"] == 0
+    assert svc.lane_view(slot[:10], (int(slot[11:13]) + 5) % 24)["booked_total"] == 0
+
+
+def test_a_disruption_raises_the_queues_the_monitor_shows(svc):
+    before = svc.lane_view(DATE, 10)
+    assert before["disruption"] is None
+    svc.reoptimize(vessel_delay_hours=4, queue_spike_pct=100, window_hours=2, start=f"{DATE}T10:00", now=EARLY)
+    after = svc.lane_view(DATE, 10)
+    assert after["disruption"]["uplift_pct"] == 160  # +60% vessel delay, +100% queue spike
+    for b, a in zip(before["lanes"], after["lanes"]):
+        assert a["predicted_queue_length"] > b["predicted_queue_length"] * 2.4
+    assert svc.lane_view(DATE, 13)["disruption"] is None  # outside the disrupted window
+    row = {r["hour"]: r for r in svc.congestion_profile(DATE)}
+    assert row[10]["disrupted"] is True and row[13]["disrupted"] is False
+    assert row[10]["status"] == "congested"
+
+
+def test_monitor_rejects_bad_dates_and_hours(svc):
+    with pytest.raises(BookingError):
+        svc.lane_view("nonsense", 10)
+    with pytest.raises(BookingError):
+        svc.lane_view(DATE, 25)
+    with pytest.raises(BookingError):
+        svc.congestion_profile("2030-13-45")

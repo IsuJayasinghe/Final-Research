@@ -101,6 +101,18 @@ def get_congestion(at: str | None = None):
     )
 
 
+@router.get("/congestion/profile")
+def congestion_profile(date: str):
+    """Forecast congestion for each hour of a day (worst-lane queue, wait, busy/congested status, bookings)."""
+    return _run(service.get_service().congestion_profile, date)
+
+
+@router.get("/lane-view")
+def lane_view(date: str, hour: int):
+    """All six lanes at one hour: forecast queue, wait, status and the real appointments assigned to each lane."""
+    return _run(service.get_service().lane_view, date, hour)
+
+
 @router.post("/assign-appointment", response_model=AppointmentResponse)
 def assign_appointment(request: AppointmentRequest):
     """Joint (lane, time-slot) assignment: congestion model forecasts every lane

@@ -27,6 +27,16 @@ from scheduler import BookingState, Disruption
 
 HIGH_RISK_NOTE_THRESHOLD = 0.15  # mention no-show risk in move explanations above this
 MODEL_MAX_MISSING = 3  # the models were trained on 0-3 missing documents
+BUSY_QUEUE = 4.0  # a lane with at least this many trucks queued is "busy" ...
+CONGESTED_QUEUE = 8.0  # ... and "congested" from this many
+
+
+def lane_status(queue: float) -> str:
+    if queue >= CONGESTED_QUEUE:
+        return "congested"
+    if queue >= BUSY_QUEUE:
+        return "busy"
+    return "normal"
 
 
 class BookingError(ValueError):
@@ -59,10 +69,17 @@ class GateService:
             return base
         return base * (1 + self.disruption.uplift(slot))
 
-    @staticmethod
-    def _lane_for(slot: datetime) -> tuple[int, float, dict[int, float]]:
+    def _lane_for(self, slot: datetime, exclude_id: int | None = None) -> tuple[int, float, dict[int, float]]:
+        """Lane for a booking in this slot: the lane with the lowest forecast queue PLUS the trucks already booked
+        on it in this hour, so a busy hour spreads across the lanes instead of piling onto the single quietest one.
+
+        Returns (lane, forecast queue of that lane, forecast queue of every lane)."""
         forecasts = ml_models.get_all_lane_forecasts(slot)
-        lane = min(forecasts, key=forecasts.get)
+        booked = {lane: 0 for lane in forecasts}
+        for a in self.repo.list(ACTIVE_STATUSES):
+            if a.id != exclude_id and a.assigned_slot == slot and a.lane in booked:
+                booked[a.lane] += 1
+        lane = min(forecasts, key=lambda ln: (forecasts[ln] + booked[ln], ln))
         return lane, forecasts[lane], forecasts
 
     @staticmethod
@@ -255,7 +272,7 @@ class GateService:
         )
         clearance = None
         if a.assigned_slot:
-            _, queue, _ = self._lane_for(a.assigned_slot)
+            _, queue, _ = self._lane_for(a.assigned_slot, exclude_id=a.id)
             clearance = self._clearance(
                 dataclasses.replace(a, missing_documents=missing, customs_risk_flag=customs), a.assigned_slot, queue
             )
@@ -470,7 +487,7 @@ class GateService:
                 self.repo.update(a.id, assigned_slot=None, lane=None, status="WAITLISTED", decision_reason=" ".join(reasons))
                 self.repo.add_event(a.id, "WAITLISTED", m.old_slot, None, " ".join(reasons))
             else:
-                lane, queue, _ = self._lane_for(m.new_slot)
+                lane, queue, _ = self._lane_for(m.new_slot, exclude_id=a.id)
                 clearance = self._clearance(a, m.new_slot, queue)
                 self.repo.update(
                     a.id,
@@ -509,6 +526,71 @@ class GateService:
 
     def clear_disruption(self) -> None:
         self.disruption = None
+
+    # -- gate monitoring ----------------------------------------------------
+    def _queues(self, slot: datetime) -> dict[int, float]:
+        """Forecast queue per lane for a slot, raised by any active disruption (vessel delay / queue spike)."""
+        uplift = self.disruption.uplift(slot) if self.disruption else 0.0
+        return {lane: q * (1 + uplift) for lane, q in ml_models.get_all_lane_forecasts(slot).items()}
+
+    @staticmethod
+    def _slot(day: str, hour: int) -> datetime:
+        try:
+            return datetime.strptime(day, "%Y-%m-%d").replace(hour=hour)
+        except ValueError:
+            raise BookingError("date must be YYYY-MM-DD and hour 0-23")
+
+    def congestion_profile(self, day: str) -> list[dict]:
+        """How busy the gate is in each hour of a day (forecast), so the busy hours stand out."""
+        booked = {}
+        for a in self.repo.list(ACTIVE_STATUSES):
+            if a.assigned_slot is not None:
+                booked[a.assigned_slot] = booked.get(a.assigned_slot, 0) + 1
+        rows = []
+        for hour in range(24):
+            slot = self._slot(day, hour)
+            queues = self._queues(slot)
+            worst = max(queues.values())
+            rows.append(
+                {
+                    "hour": hour,
+                    "slot": slot.isoformat(timespec="minutes"),
+                    "max_lane_queue": round(worst, 1),
+                    "total_queue": round(sum(queues.values()), 1),
+                    "avg_wait_minutes": ml_models.estimate_wait_minutes(sum(queues.values()) / len(queues)),
+                    "status": lane_status(worst),
+                    "booked": booked.get(slot, 0),
+                    "disrupted": bool(self.disruption and self.disruption.uplift(slot) > 0),
+                }
+            )
+        return rows
+
+    def lane_view(self, day: str, hour: int) -> dict:
+        """Every lane at one hour: forecast queue, wait, status, and the real appointments assigned to it."""
+        slot = self._slot(day, hour)
+        queues = self._queues(slot)
+        active = [a for a in self.repo.list(ACTIVE_STATUSES) if a.assigned_slot == slot]
+        lanes = []
+        for lane in sorted(queues):
+            q = round(queues[lane], 1)
+            lanes.append(
+                {
+                    "lane": lane,
+                    "predicted_queue_length": q,
+                    "predicted_avg_wait_minutes": ml_models.estimate_wait_minutes(q),
+                    "status": lane_status(q),
+                    "bookings": [a.to_dict() for a in active if a.lane == lane],
+                }
+            )
+        disruption = None
+        if self.disruption and self.disruption.uplift(slot) > 0:
+            disruption = {
+                "kind": self.disruption.kind,
+                "vessel_delay_hours": self.disruption.vessel_delay_hours,
+                "queue_spike_pct": self.disruption.queue_spike_pct,
+                "uplift_pct": round(self.disruption.uplift(slot) * 100),
+            }
+        return {"slot": slot.isoformat(timespec="minutes"), "lanes": lanes, "booked_total": len(active), "disruption": disruption}
 
     # -- slot board -------------------------------------------------------
     def slot_board(self, date: str) -> list[dict]:

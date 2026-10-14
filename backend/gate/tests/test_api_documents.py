@@ -147,3 +147,12 @@ def test_upload_returns_the_template_checklist_over_http(client, sample_dir):
     bad = post_doc(client, sample_dir, "booking_confirmation_incomplete", "booking_confirmation", expected_container_id="CSQU3054383")
     body = bad.json()
     assert body["status"] == "flagged" and "Voyage number" in body["template"]["missing"]
+
+
+def test_monitor_endpoints_over_http(client):
+    prof = client.get("/api/congestion/profile?date=2031-03-12").json()
+    assert len(prof) == 24 and {"hour", "max_lane_queue", "status", "booked", "disrupted"} <= set(prof[0])
+    assert prof[3]["status"] == "normal" and prof[16]["status"] == "congested"
+    view = client.get("/api/lane-view?date=2031-03-12&hour=16").json()
+    assert len(view["lanes"]) == 6 and all(l["status"] == "congested" or l["status"] == "busy" for l in view["lanes"])
+    assert client.get("/api/lane-view?date=2031-03-12&hour=99").status_code == 422
