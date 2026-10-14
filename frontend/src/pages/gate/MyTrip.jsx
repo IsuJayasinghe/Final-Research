@@ -20,7 +20,6 @@ function stepIndex(phase) {
     case 'fix_documents':
       return 1
     case 'ready':
-      return 2
     default:
       return 3
   }
