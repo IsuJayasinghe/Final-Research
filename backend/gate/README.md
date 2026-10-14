@@ -33,6 +33,8 @@ runs the component standalone.
 | POST | `/api/assign-appointment` | Original single-shot lane+slot assignment (no persistence) |
 | POST | `/api/predict-clearance` | Clearance-time model on its own |
 | GET | `/api/congestion?at=` | Per-lane forecast queue and wait for a chosen hour |
+| GET | `/api/congestion/profile?date=` | Forecast congestion for each of the 24 hours (worst-lane queue, wait, normal/busy/congested, bookings) |
+| GET | `/api/lane-view?date=&hour=` | All 6 lanes at one hour: forecast queue, wait, status and the real appointments on each lane (applies any active disruption) |
 
 ## Nothing about the booking's conditions is typed in
 A booking only needs who, what and when (truck, container, carrier, cargo, arrival date and hour). Everything else
@@ -113,6 +115,18 @@ By default bookings live in memory. To save them in the shared PostgreSQL databa
    weather and vessel delay may be NULL).
 2. Copy `.env.example` to `.env` and set `DATABASE_URL` (never commit `.env`).
 `GET /` reports the active `storage` (`memory` or `postgresql`).
+
+## Showing a busy gate without real data
+The congestion numbers come from the trained SARIMAX models (quiet at night, busy from about 08:00, congested from about
+10:00 to 18:00 with the peak around 16:00; "busy" = 4+ trucks queued in a lane, "congested" = 8+). To fill the gate with
+realistic bookings so the lane monitor, slot board and optimizer have something to show:
+```bash
+python tools/seed_demo_bookings.py                  # 60 bookings for tomorrow, following the real hourly demand profile
+python tools/seed_demo_bookings.py --count 150 --risky-share 0.4   # a packed day with unreliable-carrier bookings
+```
+The bookings go through `POST /api/appointments` like a driver's, so risk, overbooking and lane allocation all apply
+(lanes are chosen by forecast queue plus trucks already booked on them, so a busy hour spreads across the gates). They
+live in the running backend (restart it to clear them). Use `127.0.0.1`, not `localhost`, as the URL on Windows.
 
 ## Tests
 ```bash
