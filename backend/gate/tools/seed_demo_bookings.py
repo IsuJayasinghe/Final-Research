@@ -36,7 +36,7 @@ HOURLY_DEMAND = [3.9, 3.9, 3.9, 3.8, 3.9, 4.8, 6.5, 8.3, 10.1, 10.8, 11.0, 10.1,
 CARRIERS = [f"Carrier-{c}" for c in "ABCDEFGHIJ"]
 CONTAINER_TYPES = (["standard", "reefer", "hazardous", "oversized"], [0.55, 0.20, 0.10, 0.15])
 OWNER_CODES = ["MAEU", "OOLU", "TCLU", "CMAU", "MSKU", "HLCU"]
-CONFIRM_SHARE = 0.4
+CONFIRM_PATTERN = (0, 2)  # of every 5 bookings, these positions are confirmed (40%); the rest stay PENDING
 
 
 def container_number(rng: random.Random) -> str:
@@ -44,8 +44,15 @@ def container_number(rng: random.Random) -> str:
     return code + str(iso6346_check_digit(code))
 
 
-def build_bookings(day: str, count: int, seed: int = 42) -> list[dict]:
-    """`count` demo booking requests for `day`, following the hourly demand profile (deterministic for a seed)."""
+def should_confirm(index: int) -> bool:
+    return index % 5 in CONFIRM_PATTERN
+
+
+def build_bookings(day: str, count: int, seed: int = 42, risky_share: float = 0.15) -> list[dict]:
+    """`count` demo booking requests for `day`, following the hourly demand profile (deterministic for a seed).
+
+    `risky_share` of them come from Carrier-B, the least reliable carrier (about 21% past no-shows), whose bookings are
+    the ones the overbooking rule can safely double up."""
     rng = random.Random(seed)
     hours = rng.choices(range(24), weights=HOURLY_DEMAND, k=count)
     types = rng.choices(CONTAINER_TYPES[0], weights=CONTAINER_TYPES[1], k=count)
@@ -55,7 +62,7 @@ def build_bookings(day: str, count: int, seed: int = 42) -> list[dict]:
             {
                 "truck_id": f"TRK-9{i:04d}",
                 "container_id": container_number(rng),
-                "carrier": rng.choice(CARRIERS),
+                "carrier": "Carrier-B" if rng.random() < risky_share else rng.choice([c for c in CARRIERS if c != "Carrier-B"]),
                 "cargo_category": rng.choice(["export", "import"]),
                 "container_type": ctype,
                 "arrival_date": day,
@@ -78,6 +85,7 @@ def main() -> int:
     parser.add_argument("--count", type=int, default=60, help="number of bookings (default 60)")
     parser.add_argument("--url", default="http://127.0.0.1:8000", help="backend base URL (127.0.0.1 is much faster than localhost on Windows)")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--risky-share", type=float, default=0.15, help="share of bookings from the unreliable Carrier-B (default 0.15)")
     args = parser.parse_args()
 
     try:
@@ -88,7 +96,7 @@ def main() -> int:
     print(f"Backend OK (storage: {health.get('storage')}). Creating {args.count} demo bookings for {args.date} ...")
 
     created, overbooked, waitlisted, confirmed = [], 0, 0, 0
-    for i, booking in enumerate(build_bookings(args.date, args.count, args.seed)):
+    for i, booking in enumerate(build_bookings(args.date, args.count, args.seed, args.risky_share)):
         try:
             out = _call(args.url + "/api/appointments", "POST", booking)
         except urllib.error.HTTPError as e:
@@ -98,13 +106,13 @@ def main() -> int:
         created.append(appt)
         overbooked += bool(appt["overbooked"])
         waitlisted += appt["status"] == "WAITLISTED"
-        if appt["status"] == "PENDING" and i % round(1 / CONFIRM_SHARE) in (0, 1):
+        if appt["status"] == "PENDING" and should_confirm(i):
             _call(f"{args.url}/api/appointments/{appt['id']}/confirm", "POST", {})
             confirmed += 1
 
     per_hour: dict[int, int] = {}
-    for a in created:
-        if a["assigned_slot"]:
+    for a in created:  # only the target day: bookings near midnight can spill into the neighbouring day
+        if a["assigned_slot"] and a["assigned_slot"].startswith(args.date):
             per_hour[int(a["assigned_slot"][11:13])] = per_hour.get(int(a["assigned_slot"][11:13]), 0) + 1
     print(f"Created {len(created)} bookings: {confirmed} confirmed, {overbooked} overbooked, {waitlisted} waitlisted.")
     print("Bookings per hour: " + "  ".join(f"{h:02d}h:{n}" for h, n in sorted(per_hour.items())))

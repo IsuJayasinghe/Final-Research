@@ -30,3 +30,15 @@ def test_arrivals_follow_the_real_demand_profile():
 def test_container_type_mix_matches_the_training_data():
     types = Counter(b["container_type"] for b in seed.build_bookings("2031-03-12", 2000))
     assert 0.45 < types["standard"] / 2000 < 0.65 and types["hazardous"] / 2000 < 0.15
+
+
+def test_about_forty_percent_are_confirmed():
+    confirmed = sum(seed.should_confirm(i) for i in range(100))
+    assert confirmed == 40
+
+
+def test_risky_share_controls_how_many_bookings_use_the_unreliable_carrier():
+    none = seed.build_bookings("2031-03-12", 1000, risky_share=0.0)
+    some = seed.build_bookings("2031-03-12", 1000, risky_share=0.3)
+    assert not any(b["carrier"] == "Carrier-B" for b in none)
+    assert 0.2 < sum(b["carrier"] == "Carrier-B" for b in some) / 1000 < 0.4
