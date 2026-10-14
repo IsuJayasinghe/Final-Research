@@ -275,3 +275,24 @@ def test_ocr_derives_customs_risk_from_each_declaration(samples, name, level):
 @ocr
 def test_non_customs_documents_carry_no_customs_assessment(samples):
     assert check(samples, "vgm", "vgm")["customs_assessment"] is None
+
+
+# ---- vessel name read from the booking confirmation ---------------------------------------
+
+def test_extracts_vessel_and_voyage():
+    f = docs.extract_fields("BOOKING CONFIRMATION\nVessel: MV EVER GRACE   Voyage: 042E\nPort of Loading: Colombo")
+    assert f["vessel_name"] == "MV EVER GRACE" and f["voyage"] == "042E"
+    assert docs.extract_fields("VESSEL NAME - MV PACIFIC STAR")["vessel_name"] == "MV PACIFIC STAR"
+
+
+def test_the_word_vessel_in_ordinary_text_is_not_a_vessel_name():
+    assert "vessel_name" not in docs.extract_fields("no vessel line here, just words")
+
+
+@ocr
+@pytest.mark.parametrize(
+    "name,vessel", [("booking_confirmation", "MV EVER GRACE"), ("booking_confirmation_delayed_vessel", "MV OCEAN PIONEER")]
+)
+def test_ocr_reads_the_vessel_name_from_the_booking_confirmation(samples, name, vessel):
+    r = check(samples, name, "booking_confirmation")
+    assert r["status"] == "cleared" and r["fields"]["vessel_name"] == vessel
