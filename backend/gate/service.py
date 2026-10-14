@@ -43,6 +43,9 @@ EVENT_TITLES = {
     "WAITLISTED": ("Waitlisted", "warning"),
     "DOCUMENTS_CHECKED": ("Documents checked", "info"),
     "CANCELLED": ("Cancelled", "info"),
+    "ARRIVED": ("Checked in at the gate", "info"),
+    "COMPLETED": ("Gate process complete", "success"),
+    "NO_SHOW": ("Marked as no-show", "error"),
 }
 
 
@@ -510,9 +513,91 @@ class GateService:
         a = self._require(appointment_id)
         if a.status == "CANCELLED":
             raise BookingError("Appointment is already cancelled.")
+        if a.status in ("ARRIVED", "COMPLETED", "NO_SHOW"):
+            raise BookingError(f"This appointment can no longer be cancelled (it is {a.status}).")
         self.repo.update(appointment_id, status="CANCELLED")
         self.repo.add_event(appointment_id, "CANCELLED", a.assigned_slot, None, "Cancelled by carrier")
         return self.repo.get(appointment_id)
+
+    # -- gate officer: processing a truck at its gate ----------------------------------
+    def check_in(self, appointment_id: int, note: str = "") -> Appointment:
+        """The truck has reached its gate: the officer starts the gate process."""
+        a = self._require(appointment_id)
+        if a.status != "CONFIRMED":
+            raise BookingError(f"Only approved appointments can be checked in (this one is {a.status}).")
+        message = f"Checked in at Gate {a.lane}. Follow the gate officer's instructions."
+        self.repo.update(appointment_id, status="ARRIVED")
+        self.repo.add_event(appointment_id, "ARRIVED", a.assigned_slot, a.assigned_slot, (note + " " + message).strip())
+        return self.repo.get(appointment_id)
+
+    def complete(self, appointment_id: int, note: str = "") -> Appointment:
+        """The gate process for this truck is finished (documents, seal and container checked, truck released)."""
+        a = self._require(appointment_id)
+        if a.status not in ("CONFIRMED", "ARRIVED"):
+            raise BookingError(f"Only approved or checked-in appointments can be completed (this one is {a.status}).")
+        took = ""
+        arrived = [e for e in self.repo.events(appointment_id) if e["event_type"] == "ARRIVED"]
+        if arrived:
+            minutes = (datetime.now() - datetime.fromisoformat(str(arrived[-1]["event_time"]))).total_seconds() / 60
+            took = f" Gate process took {max(minutes, 0):.0f} min."
+        self.repo.update(appointment_id, status="COMPLETED")
+        message = f"Gate process complete at Gate {a.lane}. You may leave the terminal.{took}"
+        self.repo.add_event(appointment_id, "COMPLETED", a.assigned_slot, a.assigned_slot, (note + " " + message).strip())
+        return self.repo.get(appointment_id)
+
+    def mark_no_show(self, appointment_id: int, note: str = "") -> Appointment:
+        """The truck never came; the officer releases its place."""
+        a = self._require(appointment_id)
+        if a.status != "CONFIRMED":
+            raise BookingError(f"Only approved appointments can be marked as no-show (this one is {a.status}).")
+        self.repo.update(appointment_id, status="NO_SHOW")
+        self.repo.add_event(appointment_id, "NO_SHOW", a.assigned_slot, None, (note + " Truck did not arrive.").strip())
+        return self.repo.get(appointment_id)
+
+    def gate_desk(self, lane: int, date: str | None = None, now: datetime | None = None) -> dict:
+        """What one gate officer sees: every booking on this gate for the day, in slot order, with what to do next."""
+        now = now or datetime.now()
+        if lane not in ml_models.LANE_IDS:
+            raise BookingError(f"lane must be one of {ml_models.LANE_IDS}")
+        try:
+            day = datetime.strptime(date, "%Y-%m-%d").date() if date else now.date()
+        except ValueError:
+            raise BookingError("date must be YYYY-MM-DD")
+        rows = [
+            a for a in self.repo.list(("CONFIRMED", "ARRIVED", "COMPLETED", "NO_SHOW"))
+            if a.lane == lane and a.assigned_slot is not None and a.assigned_slot.date() == day
+        ]
+        rows.sort(key=lambda a: (a.assigned_slot, a.id))
+        counts = {s: sum(1 for a in rows if a.status == s) for s in ("CONFIRMED", "ARRIVED", "COMPLETED", "NO_SHOW")}
+        next_up = next((a.id for a in rows if a.status in ("ARRIVED", "CONFIRMED")), None)
+        bookings = []
+        for a in rows:
+            d = a.to_dict()
+            d["docs_state"] = (
+                "not uploaded" if a.missing_documents is None else "complete" if a.missing_documents == 0 else f"{a.missing_documents} missing"
+            )
+            d["minutes_to_slot"] = round((a.assigned_slot - now).total_seconds() / 60)
+            d["next_up"] = a.id == next_up
+            bookings.append(d)
+        closures = [
+            {"start": c.start.isoformat(timespec="minutes"), "end": c.end.isoformat(timespec="minutes"), "reason": c.reason}
+            for c in self.closures
+            if c.lane == lane and c.start.date() <= day <= c.end.date()
+        ]
+        hour = now.hour if day == now.date() else 8
+        queue = None if self._is_closed(lane, datetime.combine(day, datetime.min.time()).replace(hour=hour)) else round(
+            self._queues(datetime.combine(day, datetime.min.time()).replace(hour=hour), include_closed=True)[lane], 1
+        )
+        return {
+            "lane": lane,
+            "date": day.isoformat(),
+            "counts": counts,
+            "total": len(rows),
+            "closures": closures,
+            "queue_now": queue,
+            "queue_hour": hour,
+            "bookings": bookings,
+        }
 
     def list(self, truck_id: str | None = None, statuses: list[str] | None = None) -> list[dict]:
         rows = self.repo.list(statuses)
@@ -559,7 +644,7 @@ class GateService:
         )
 
         pool = [a for a in self.repo.list(("PENDING", "WAITLISTED"))]
-        confirmed = [_to_state(a) for a in self.repo.list(("CONFIRMED",))]
+        confirmed = [_to_state(a) for a in self.repo.list(("CONFIRMED", "ARRIVED"))]
         by_id = {a.id: a for a in pool}
         moves = scheduler.reoptimize([_to_state(a) for a in pool], confirmed, earliest, self._wait)
 
@@ -745,7 +830,7 @@ class GateService:
         now = now or datetime.now()
         floor = scheduler.hour_floor(now)
         upcoming = [
-            a for a in self.repo.list(ACTIVE_STATUSES)
+            a for a in self.repo.list(("PENDING", "CONFIRMED"))
             if a.assigned_slot is not None and a.assigned_slot >= floor and a.lane is not None
         ]
         changes = []
@@ -801,7 +886,7 @@ class GateService:
         now = now or datetime.now()
         floor = scheduler.hour_floor(now)
         sent = 0
-        for a in self.repo.list(ACTIVE_STATUSES):
+        for a in self.repo.list(("PENDING", "CONFIRMED")):
             if a.assigned_slot is None or a.lane is None or a.assigned_slot < floor or self._is_closed(a.lane, a.assigned_slot):
                 continue
             cause = self._delay_cause(a.assigned_slot, a.lane)
@@ -840,6 +925,9 @@ class GateService:
             "WAITLISTED": ("waitlisted", "No slot was free. You are on the waiting list."),
             "REJECTED": ("rejected", "The gate admin rejected this request. See the reason and book another time."),
             "CANCELLED": ("cancelled", "This appointment was cancelled."),
+            "ARRIVED": ("at_gate", f"You are checked in at Gate {a.lane}. The gate officer is processing your truck."),
+            "COMPLETED": ("completed", "Gate process complete. You may leave the terminal."),
+            "NO_SHOW": ("no_show", "You did not arrive for this slot, so the gate officer released it. Book a new time."),
         }
         if a.status in steps or slot is None or a.lane is None:
             phase, step = steps.get(a.status, ("waiting", "Waiting for a slot."))

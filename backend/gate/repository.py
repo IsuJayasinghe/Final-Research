@@ -20,7 +20,7 @@ from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 from typing import Iterable
 
-ACTIVE_STATUSES = ("PENDING", "CONFIRMED")
+ACTIVE_STATUSES = ("PENDING", "CONFIRMED", "ARRIVED")  # ARRIVED still occupies its lane
 
 
 @dataclass
@@ -33,7 +33,7 @@ class Appointment:
     requested_slot: datetime
     assigned_slot: datetime | None = None
     lane: int | None = None
-    status: str = "PENDING"  # PENDING (unconfirmed) | CONFIRMED | WAITLISTED | CANCELLED
+    status: str = "PENDING"  # PENDING | CONFIRMED | ARRIVED | COMPLETED | NO_SHOW | REJECTED | WAITLISTED | CANCELLED
     customs_risk_flag: str | None = None  # None until the customs document has been read by OCR
     missing_documents: int | None = None  # None until the documents have been checked
     carrier_reliability: float = 0.75
