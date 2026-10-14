@@ -91,3 +91,6 @@ logs/
 *.log
 *.tmp
 *.temp
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
