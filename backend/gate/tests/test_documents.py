@@ -74,7 +74,8 @@ def test_classifies_each_document_type(text, expected):
 
 def run(doc_key, text, conf=0.9, ctx=None):
     fields = docs.extract_fields(text)
-    return docs.validate(doc_key, text, fields, docs.classify(text, fields), conf, ctx if ctx is not None else CTX)
+    issues, _template = docs.check_issues(doc_key, text, fields, docs.classify(text, fields), conf, ctx if ctx is not None else CTX)
+    return issues
 
 
 def codes(issues, level=None):
@@ -82,7 +83,8 @@ def codes(issues, level=None):
 
 
 def test_clean_vgm_has_no_errors():
-    assert codes(run("vgm", f"VERIFIED GROSS MASS VGM Container {CONTAINER} 24,350 kg"), "error") == set()
+    text = f"VERIFIED GROSS MASS VGM Container {CONTAINER} 24,350 kg Method 1 weighbridge SOLAS Date 2026-10-14"
+    assert codes(run("vgm", text), "error") == set()
 
 
 def test_container_on_document_must_match_the_booking():
@@ -92,7 +94,7 @@ def test_container_on_document_must_match_the_booking():
 
 def test_missing_container_number_is_an_error_where_required():
     assert "container_missing" in codes(run("vgm", "VERIFIED GROSS MASS VGM 24,350 kg"), "error")
-    assert "container_missing" not in codes(run("cusdec", "CUSTOMS CLEARANCE CUSDEC HS Code 2710 Duty"))
+    assert "container_missing" in codes(run("cusdec", "CUSTOMS CLEARANCE CUSDEC HS Code 2710 Duty"), "error")  # now required
 
 
 def test_vgm_weight_must_be_present_and_plausible():
@@ -119,18 +121,20 @@ def test_gate_pass_truck_and_date_checks():
     base = "GATE PASS Entry permit Container CSQU3054383 "
     assert "truck_mismatch" in codes(run("gate_pass", base + "Truck TRK-11111 Valid until 2026-10-14"), "error")
     assert "date_mismatch" in codes(run("gate_pass", base + "Truck TRK-80579 Valid until 2026-10-20"), "warning")
-    assert codes(run("gate_pass", base + "Truck TRK-80579 Valid until 2026-10-14"), "error") == set()
+    complete = base + "Truck TRK-80579 Vehicle No: WP CAB-1234 Valid until 2026-10-14"
+    assert codes(run("gate_pass", complete), "error") == set()
 
 
 def test_special_cargo_requirements_depend_on_container_type():
     assert "un_missing" in codes(run("special_cargo", "DANGEROUS GOODS DECLARATION IMDG Class 3"), "error")
     reefer = dict(CTX, container_type="reefer")
-    assert "temperature_missing" in codes(run("special_cargo", "REEFER Pre-trip refrigeration certificate", ctx=reefer), "warning")
-    assert "temperature_missing" not in codes(run("special_cargo", "REEFER pre-trip Set Point -18 C", ctx=reefer))
+    assert "temperature_missing" in codes(run("special_cargo", f"REEFER Pre-trip refrigeration certificate {CONTAINER}", ctx=reefer), "error")
+    assert "temperature_missing" not in codes(run("special_cargo", f"REEFER pre-trip Set Point -18 C {CONTAINER}", ctx=reefer))
 
 
 def test_check_digit_failure_is_only_a_warning_and_low_quality_is_flagged():
-    issues = run("vgm", "VERIFIED GROSS MASS VGM Container CSQU3054384 24,350 kg", conf=0.6, ctx=dict(CTX, expected_container_id="CSQU3054384"))
+    text = "VERIFIED GROSS MASS VGM Container CSQU3054384 24,350 kg Method 1 weighbridge SOLAS Date 2026-10-14"
+    issues = run("vgm", text, conf=0.6, ctx=dict(CTX, expected_container_id="CSQU3054384"))
     assert "check_digit" in codes(issues, "warning") and "low_quality" in codes(issues, "warning")
     assert codes(issues, "error") == set()
 
@@ -230,6 +234,7 @@ def test_digital_pdf_uses_its_text_layer_without_ocr():
     pdf = fitz.open()
     page = pdf.new_page()
     page.insert_text((50, 80), f"VERIFIED GROSS MASS (VGM)  Container No: {CONTAINER}  Verified Gross Mass: 24,350 kg")
+    page.insert_text((50, 110), "Method 1 - weighbridge  SOLAS VI/2 declaration  Date: 2026-10-14")
     r = docs.check_document(pdf.tobytes(), "vgm.pdf", "vgm", CTX)
     assert r["engine"] == "pdf-text" and r["ocr_confidence"] == 1.0 and r["status"] == "cleared"
 
@@ -257,9 +262,9 @@ def test_incomplete_declaration_raises_customs_risk():
     assert docs.assess_customs_risk({})["level"] == "high"  # nothing usable on the declaration
 
 
-def test_cusdec_warns_when_hs_or_declaration_is_missing():
+def test_cusdec_without_hs_code_or_declaration_number_is_incomplete():
     issues = run("cusdec", "CUSTOMS CLEARANCE DOCUMENT CUSDEC Customs Declaration Exporter Consignee")
-    assert {"hs_missing", "declaration_missing"} <= codes(issues, "warning")
+    assert {"missing_hs_code", "missing_declaration_no"} <= codes(issues, "error")
 
 
 @ocr
@@ -269,7 +274,8 @@ def test_cusdec_warns_when_hs_or_declaration_is_missing():
 )
 def test_ocr_derives_customs_risk_from_each_declaration(samples, name, level):
     r = check(samples, name, "cusdec")
-    assert r["status"] == "cleared" and r["customs_assessment"]["level"] == level
+    assert r["customs_assessment"]["level"] == level  # derived even when the declaration is incomplete
+    assert r["status"] == ("flagged" if name == "cusdec_incomplete" else "cleared")
 
 
 @ocr
