@@ -13,7 +13,10 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 import documents
 import ml_models
+import noshow
 import service
+import vessels
+import weather
 from schemas import (
     AppointmentRequest,
     AppointmentResponse,
@@ -264,3 +267,24 @@ def required_documents(container_type: str = "standard"):
     return [
         {"doc_key": k, "label": documents.DOCUMENT_LABELS[k]} for k in documents.required_documents(container_type)
     ]
+
+
+# ---- conditions that are derived automatically ------------------------------------------------
+
+@router.get("/weather")
+def weather_forecast(date: str):
+    """Weather severity (0 clear .. 3 storm) for a day, from the Open-Meteo forecast for the port.
+    `severity` is null when the forecast is unavailable or out of range."""
+    return weather.get_weather(date)
+
+
+@router.get("/carriers")
+def carriers():
+    """Carrier profiles from the model's history: reliability and past no-show rate."""
+    return noshow.carrier_profiles()
+
+
+@router.get("/vessel-delay")
+def vessel_delay(vessel: str, date: str):
+    """Delay of a vessel on a day, from the vessel schedule (simulated until Component 1 is connected)."""
+    return vessels.get_vessel_delay(vessel, date)

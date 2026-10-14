@@ -101,3 +101,26 @@ def test_full_flow_over_http_book_check_submit(client, sample_dir):
 def test_required_documents_depend_on_container_type(client):
     assert len(client.get("/api/documents/required?container_type=standard").json()) == 6
     assert len(client.get("/api/documents/required?container_type=reefer").json()) == 7
+
+
+def test_derived_condition_endpoints(client):
+    carriers = client.get("/api/carriers").json()
+    assert len(carriers) == 10 and {"carrier", "reliability", "past_no_show_rate"} <= set(carriers[0])
+    assert next(c for c in carriers if c["carrier"] == "Carrier-B")["reliability"] < 0.6
+
+    w = client.get("/api/weather?date=2031-03-10").json()  # far beyond the forecast range
+    assert w["severity"] is None and w["source"] == "beyond-forecast-range"
+
+    v = client.get("/api/vessel-delay?vessel=MV OCEAN PIONEER&date=2031-03-10").json()
+    assert v["delay_hours"] == 5.0 and v["delayed"] is True
+
+
+def test_booking_over_http_needs_no_conditions_typed_in(client):
+    r = client.post("/api/appointments", json={
+        "truck_id": "TRK-1", "container_id": "CSQU3054383", "carrier": "Carrier-B", "cargo_category": "export",
+        "container_type": "hazardous", "arrival_date": "2031-03-11", "arrival_hour": 10,
+    })
+    assert r.status_code == 200
+    a = r.json()["appointment"]
+    assert 0.45 < a["carrier_reliability"] < 0.6 and a["customs_risk_flag"] is None and a["vessel_delay"] is None
+    assert r.json()["conditions"]["carrier"]["reliability_used"] == a["carrier_reliability"]
