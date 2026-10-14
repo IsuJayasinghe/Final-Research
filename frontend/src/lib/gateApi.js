@@ -55,19 +55,39 @@ export function createAppointment(form) {
   })
 }
 
-export const listAppointments = () => getJson('/api/appointments')
+export function listAppointments({ truckId, status } = {}) {
+  const params = new URLSearchParams()
+  if (truckId) params.set('truck_id', truckId)
+  if (status) params.set('status', status)
+  const query = params.toString()
+  return getJson(`/api/appointments${query ? `?${query}` : ''}`)
+}
 export const getAppointmentEvents = (id) => getJson(`/api/appointments/${id}/events`)
-export const confirmAppointment = (id) => postJson(`/api/appointments/${id}/confirm`)
+// the gate admin decides; the driver no longer confirms their own booking
+export const approveAppointment = (id) => postJson(`/api/appointments/${id}/approve`)
+export const rejectAppointment = (id, reason) => postJson(`/api/appointments/${id}/reject`, { reason })
+
+// the driver's live view of one appointment, and what they have been told
+export const getLive = (id) => getJson(`/api/appointments/${id}/live`)
+export const getNotifications = (id) => getJson(`/api/appointments/${id}/notifications`)
+
+// gate admin: take a lane out of service (drivers on it are moved automatically) and re-check lane balance
+export const closeLane = ({ lane, hours, start, reason }) =>
+  postJson(`/api/lanes/${lane}/close`, { hours: Number(hours), start: start || null, reason })
+export const reopenLane = (lane) => request(`/api/lanes/${lane}/close`, { method: 'DELETE' })
+export const getClosures = () => getJson('/api/lanes/closures')
+export const rebalanceLanes = () => postJson('/api/rebalance')
 export const cancelAppointment = (id) => postJson(`/api/appointments/${id}/cancel`)
 
 export const getSlots = (date) => getJson(`/api/slots?date=${encodeURIComponent(date)}`)
 
-export const reoptimize = ({ vesselDelayHours, queueSpikePct, windowHours, start }) =>
+export const reoptimize = ({ vesselDelayHours, queueSpikePct, windowHours, start, lane }) =>
   postJson('/api/reoptimize', {
     vessel_delay_hours: Number(vesselDelayHours),
     queue_spike_pct: Number(queueSpikePct),
     window_hours: Number(windowHours),
     start: start || null,
+    lane: lane ? Number(lane) : null,
   })
 
 export const clearDisruption = () => request('/api/disruption', { method: 'DELETE' })
