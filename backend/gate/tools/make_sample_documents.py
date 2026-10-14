@@ -145,6 +145,39 @@ def main(out: Path) -> None:
         "Hazard label displayed on all four sides",
     ], out / "special_cargo.png")
 
+    # ---- a complete reefer certificate, and documents that are INCOMPLETE or expired (template checks)
+    render("REEFER PRE-TRIP INSPECTION CERTIFICATE", [
+        f"Container: {CONTAINER}",
+        "Refrigerated container - Set Point: -18 C",
+        f"Pre-trip inspection completed {APPT_DATE}",
+        "Temperature recorder calibrated",
+    ], out / "special_cargo_reefer.png")
+
+    render("BOOKING CONFIRMATION", [
+        "Booking No: BKG-77201944",
+        f"Container No: {CONTAINER}",
+        "Vessel: MV EVER GRACE",
+        "Port of Loading: Colombo",
+    ], out / "booking_confirmation_incomplete.png", "Sri Lanka Ports Authority - Terminal Booking")  # no voyage, discharge port or date
+
+    render("GATE PASS", [
+        f"Truck: {TRUCK}   Vehicle No: WP CAB-1234",
+        f"Container: {CONTAINER}",
+        "Valid from 2019-12-30 09:00   Valid until 2020-01-01 12:00",
+        "Authorised for terminal entry - Gate In",
+    ], out / "gate_pass_expired.png", "Colombo Terminal Entry Permit")
+
+    render("DRIVER AND VEHICLE DOCUMENTS", [
+        "Driver: K. Perera",
+        "Revenue Licence valid 2026",
+    ], out / "driver_docs_incomplete.png")  # no licence number, no vehicle registration
+
+    render("DANGEROUS GOODS DECLARATION", [
+        f"Container: {CONTAINER}",
+        "IMDG Class 3 - Flammable liquid",
+        "Hazard label displayed on all four sides",
+    ], out / "special_cargo_incomplete.png")  # no UN number, no packing group
+
     # ---- faulty variants
     render("VERIFIED GROSS MASS (VGM)", [
         f"Container No: {OTHER_CONTAINER}",
