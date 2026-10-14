@@ -17,6 +17,7 @@ import { Link, useLocation } from 'react-router-dom'
 import {
   checkDocument,
   getAppointmentDocuments,
+  getDocumentTemplates,
   listAppointments,
   submitDocuments,
 } from '../../lib/gateApi'
@@ -104,13 +105,66 @@ function ExtractedFields({ fields }) {
   )
 }
 
-function DocumentRow({ doc, entry, disabled, onFile }) {
+// Field-by-field check of a document against its template: is every required detail present and valid?
+function TemplateChecklist({ template }) {
+  const done = Math.round(template.completeness * 100)
+  return (
+    <div>
+      <div className="flex items-center justify-between text-xs">
+        <span className="font-semibold text-gray-700">
+          Required details: {template.required_ok} of {template.required_total}
+        </span>
+        <span className={`font-semibold ${template.complete ? 'text-green-700' : 'text-red-700'}`}>
+          {template.complete ? 'Document complete' : `${done}% complete`}
+        </span>
+      </div>
+      <div className="mt-1 h-1.5 rounded-full bg-gray-200">
+        <div
+          className={`h-1.5 rounded-full ${template.complete ? 'bg-green-500' : 'bg-amber-500'}`}
+          style={{ width: `${done}%` }}
+        />
+      </div>
+      <ul className="mt-3 grid gap-x-4 gap-y-2 sm:grid-cols-2">
+        {template.fields.map((f) => (
+          <li key={f.key} className="flex items-start gap-1.5 text-xs">
+            {f.status === 'ok' ? (
+              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-600" />
+            ) : f.status === 'invalid' ? (
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-600" />
+            ) : f.required ? (
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-600" />
+            ) : (
+              <span className="mt-0.5 w-3.5 shrink-0 text-center text-gray-300">-</span>
+            )}
+            <span className="min-w-0">
+              <span className="font-medium text-gray-800">{f.label}</span>
+              {!f.required && <span className="text-gray-400"> (optional)</span>}
+              <span
+                className={`block truncate ${
+                  f.status === 'ok' ? 'text-gray-600' : f.status === 'invalid' || f.required ? 'text-red-600' : 'text-gray-400'
+                }`}
+              >
+                {f.status === 'ok' ? f.value : f.status === 'invalid' ? f.message : f.required ? 'missing' : 'not found'}
+              </span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function DocumentRow({ doc, entry, template, disabled, onFile }) {
   const [open, setOpen] = useState(false)
   const inputId = `file-${doc.id}`
   const status = entry?.status ?? 'pending'
   const hasDetails = entry && entry.status !== 'checking' && entry.status !== 'error'
   const errors = entry?.issues?.filter((i) => i.level === 'error') ?? []
   const warnings = entry?.issues?.filter((i) => i.level === 'warning') ?? []
+  const checked = entry?.template ?? null
+  // an incomplete document shows its checklist straight away, so the user sees what is missing
+  const showChecklist = checked && hasDetails && (open || !checked.complete)
+  const mustContain = (template?.fields ?? []).filter((f) => f.required).map((f) => f.label)
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white">
@@ -118,6 +172,11 @@ function DocumentRow({ doc, entry, disabled, onFile }) {
         <div className="min-w-0">
           <p className="text-sm font-semibold text-gray-800">{doc.label}</p>
           <p className="text-xs text-gray-500">{doc.purpose}</p>
+          {!entry && mustContain.length > 0 && (
+            <p className="mt-1 text-xs text-gray-500">
+              <span className="font-medium text-[#123a5c]">Must contain:</span> {mustContain.join(' · ')}
+            </p>
+          )}
           {entry?.filename && (
             <p className="mt-1 flex items-center gap-1 truncate text-xs text-gray-600">
               <FileText className="h-3.5 w-3.5 shrink-0" />
@@ -183,6 +242,12 @@ function DocumentRow({ doc, entry, disabled, onFile }) {
             </li>
           ))}
         </ul>
+      )}
+
+      {showChecklist && (
+        <div className="border-t border-gray-100 bg-gray-50 px-4 py-3">
+          <TemplateChecklist template={checked} />
+        </div>
       )}
 
       {open && hasDetails && (
@@ -273,6 +338,14 @@ export default function DocumentUpload() {
         : BASE_DOCUMENTS,
     [containerType],
   )
+
+  // the template of each document: what it must contain (depends on the container type)
+  const [templates, setTemplates] = useState({})
+  useEffect(() => {
+    getDocumentTemplates(containerType)
+      .then((list) => setTemplates(Object.fromEntries(list.map((t) => [t.doc_key, t]))))
+      .catch(() => setTemplates({}))
+  }, [containerType])
 
   const handleFile = async (docKey, file) => {
     setError(null)
@@ -421,7 +494,14 @@ export default function DocumentUpload() {
 
       <div className="mt-3 space-y-3">
         {documents.map((doc) => (
-          <DocumentRow key={doc.id} doc={doc} entry={results[doc.id]} disabled={submitting} onFile={handleFile} />
+          <DocumentRow
+            key={doc.id}
+            doc={doc}
+            entry={results[doc.id]}
+            template={templates[doc.id]}
+            disabled={submitting}
+            onFile={handleFile}
+          />
         ))}
       </div>
 
@@ -461,6 +541,22 @@ export default function DocumentUpload() {
               ? `${outcome.summary} Fix the flagged or missing documents and resubmit.`
               : 'All documents cleared. Your booking has been updated - you are ready for a fast final verification at the gate.'}
           </p>
+          {outcome.missing > 0 && (
+            <ul className="mt-3 space-y-1 text-xs text-amber-900">
+              {outcome.required
+                .filter((r) => r.status !== 'cleared')
+                .map((r) => (
+                  <li key={r.doc_key}>
+                    <b>{r.label}:</b>{' '}
+                    {r.status === 'missing'
+                      ? 'not uploaded'
+                      : r.missing_details?.length
+                        ? `incomplete (${Math.round((r.completeness ?? 0) * 100)}%), missing ${r.missing_details.join(', ')}`
+                        : 'flagged - see the issues on the document'}
+                  </li>
+                ))}
+            </ul>
+          )}
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <RiskDelta
               label="Missing documents"
