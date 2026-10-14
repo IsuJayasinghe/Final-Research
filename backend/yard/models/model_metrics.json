@@ -18,20 +18,27 @@
       }
     },
     "prophet": {
-      "changepoint_prior_scale": 0.05,
+      "changepoint_prior_scale": 0.5,
+      "seasonality_mode": "multiplicative",
+      "regressors": [
+        "Customs_Share",
+        "Quarantine_Share",
+        "Red_Lane_Share",
+        "Arrivals"
+      ],
       "holdout": {
-        "rmse": 0.7879,
-        "mae": 0.6451,
-        "mape": 25.7146
+        "rmse": 0.382,
+        "mae": 0.3155,
+        "mape": 13.426
       },
       "rolling_7d": {
-        "rmse": 0.681,
-        "mae": 0.5367,
-        "mape": 21.8833
+        "rmse": 0.419,
+        "mae": 0.3115,
+        "mape": 14.8242
       }
     },
-    "best_model": "ARIMA",
-    "mae_difference_pct": -45.8519
+    "best_model": "Prophet",
+    "mae_difference_pct": 15.3416
   },
   "per_container_dwell": {
     "mae": 1.3563,

@@ -30,6 +30,19 @@ with open(os.path.join(MODEL_DIR, 'model_metrics.json')) as f:
 print(" All models loaded successfully!")
 
 
+# PROPHET FORECAST HELPER
+# Prophet uses daily container characteristics as regressors (notebook Cell 5). For future
+# dates their values come from pre-arrival documents / vessel manifests (Component 1);
+# until that integration exists, the saved average per weekday is used as projection.
+
+def prophet_forecast(days):
+    future = prophet_model.make_future_dataframe(periods=days, freq='D', include_history=False)
+    projection = prophet_config['weekday_regressor_projection']
+    for reg in prophet_config['regressors']:
+        future[reg] = [projection[d][reg] for d in future['ds'].dt.dayofweek]
+    return future, prophet_model.predict(future)
+
+
 # OCCUPANCY FORECAST HELPERS (same features as notebook Cell 7)
 
 OCC_FEATURES = model_metrics['occupancy']['features']
@@ -106,8 +119,7 @@ def predict_dwell():
         days = request.args.get('days', 7, type=int)
 
         # Prophet prediction
-        future = prophet_model.make_future_dataframe(periods=days, freq='D', include_history=False)
-        forecast = prophet_model.predict(future)
+        future, forecast = prophet_forecast(days)
 
         prophet_results = []
         for _, row in forecast.iterrows():
@@ -156,8 +168,7 @@ def recommend_zone_api():
 
         # If no dwell_days given, use Prophet to predict
         if dwell_days is None:
-            future = prophet_model.make_future_dataframe(periods=1, freq='D', include_history=False)
-            forecast = prophet_model.predict(future)
+            _, forecast = prophet_forecast(1)
             dwell_days = max(prophet_config['floor'], forecast['yhat'].iloc[-1])
 
         zone, reason = recommend_zone(dwell_days, container_type)
