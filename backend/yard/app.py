@@ -3,8 +3,9 @@ from flask_cors import CORS
 import joblib
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import timedelta
 import psycopg2
+import json
 import os
 
 app = Flask(__name__)
@@ -19,8 +20,39 @@ prophet_model = joblib.load(os.path.join(MODEL_DIR, 'prophet_model.pkl'))
 prophet_config = joblib.load(os.path.join(MODEL_DIR, 'prophet_config.pkl'))
 arima_model = joblib.load(os.path.join(MODEL_DIR, 'arima_model.pkl'))
 xgb_model = joblib.load(os.path.join(MODEL_DIR, 'xgboost_model.pkl'))
+occupancy_history = pd.read_csv(os.path.join(MODEL_DIR, 'occupancy_history.csv'),
+                                index_col='Date', parse_dates=True)
+
+# Evaluation metrics written by the notebook (Cell 12)
+with open(os.path.join(MODEL_DIR, 'model_metrics.json')) as f:
+    model_metrics = json.load(f)
 
 print(" All models loaded successfully!")
+
+
+# OCCUPANCY FORECAST HELPERS (same features as notebook Cell 7)
+
+OCC_FEATURES = model_metrics['occupancy']['features']
+
+def occupancy_features(hist):
+    X = pd.DataFrame(index=hist.index)
+    X['Occ_Prev'] = hist['Occupancy'].shift(1)
+    X['Occ_Prev2'] = hist['Occupancy'].shift(2)
+    X['Occ_Prev7'] = hist['Occupancy'].shift(7)
+    X['Arr_Today'] = hist['Arrivals']
+    X['Arr_Prev1'] = hist['Arrivals'].shift(1)
+    X['Arr_Prev2'] = hist['Arrivals'].shift(2)
+    X['Arr_Prev3_7'] = hist['Arrivals'].shift(3).rolling(5).sum()
+    X['DayOfWeek'] = hist.index.dayofweek
+    return X[OCC_FEATURES]
+
+def forecast_occupancy(planned_arrivals):
+    """Recursive multi-day forecast: each predicted day becomes history for the next one."""
+    sim = occupancy_history[['Occupancy', 'Arrivals']].astype(float).copy()
+    for day, arrivals in planned_arrivals.items():
+        sim.loc[day, ['Occupancy', 'Arrivals']] = [np.nan, arrivals]
+        sim.loc[day, 'Occupancy'] = xgb_model.predict(occupancy_features(sim).loc[[day]])[0]
+    return sim.loc[planned_arrivals.index, 'Occupancy']
 
 
 
@@ -74,37 +106,37 @@ def predict_dwell():
         days = request.args.get('days', 7, type=int)
 
         # Prophet prediction
-        future = prophet_model.make_future_dataframe(periods=days, freq='D')
-        future['cap'] = prophet_config['cap']
-        future['floor'] = prophet_config['floor']
+        future = prophet_model.make_future_dataframe(periods=days, freq='D', include_history=False)
         forecast = prophet_model.predict(future)
 
         prophet_results = []
-        for _, row in forecast.tail(days).iterrows():
+        for _, row in forecast.iterrows():
             prophet_results.append({
                 'date': row['ds'].strftime('%Y-%m-%d'),
-                'predicted_dwell_days': round(max(0, row['yhat']), 2)
+                'predicted_dwell_days': round(max(prophet_config['floor'], row['yhat']), 2)
             })
 
-        # ARIMA prediction
-        try:
-            arima_forecast = arima_model.get_forecast(steps=days).predicted_mean.values
-        except Exception:
-            arima_forecast = [0] * days
+        # ARIMA prediction (same future dates as Prophet)
+        arima_forecast = np.asarray(arima_model.get_forecast(steps=days).predicted_mean)
         arima_results = []
-        for i, val in enumerate(arima_forecast):
+        for date, val in zip(future['ds'], arima_forecast):
             arima_results.append({
-                'date': (datetime.now() + timedelta(days=i+1)).strftime('%Y-%m-%d'),
-                'predicted_dwell_days': round(max(0, val), 2)
+                'date': date.strftime('%Y-%m-%d'),
+                'predicted_dwell_days': round(max(0, float(val)), 2)
             })
 
+        dwell_metrics = model_metrics['dwell_time']
+        best = dwell_metrics['best_model']
         return jsonify({
             'status': 'success',
             'prophet_predictions': prophet_results,
             'arima_predictions': arima_results,
             'model_comparison': {
-                'recommended': 'Prophet',
-                'reason': 'Lower error rate and better trend capture'
+                'recommended': best,
+                'reason': f"Lower rolling 7-day forecast MAE "
+                          f"({dwell_metrics[best.lower()]['rolling_7d']['mae']:.3f} days)",
+                'prophet': dwell_metrics['prophet']['rolling_7d'],
+                'arima': dwell_metrics['arima']['rolling_7d']
             }
         })
     except Exception as e:
@@ -124,11 +156,9 @@ def recommend_zone_api():
 
         # If no dwell_days given, use Prophet to predict
         if dwell_days is None:
-            future = prophet_model.make_future_dataframe(periods=1, freq='D')
-            future['cap'] = prophet_config['cap']
-            future['floor'] = prophet_config['floor']
+            future = prophet_model.make_future_dataframe(periods=1, freq='D', include_history=False)
             forecast = prophet_model.predict(future)
-            dwell_days = max(0, forecast['yhat'].iloc[-1])
+            dwell_days = max(prophet_config['floor'], forecast['yhat'].iloc[-1])
 
         zone, reason = recommend_zone(dwell_days, container_type)
 
@@ -166,17 +196,39 @@ def recommend_zone_api():
 @app.route('/api/occupancy', methods=['GET'])
 def predict_occupancy():
     try:
+        days = request.args.get('days', 14, type=int)
+        capacity = request.args.get('capacity', None, type=float)
+
+        # Incoming container projection: average arrivals per weekday from history.
+        # To be replaced by vessel discharge plans from Component 1 (berth / vessel ETA).
+        recent = occupancy_history.loc[model_metrics['data']['window_start']:]
+        weekday_arrivals = recent['Arrivals'].groupby(recent.index.dayofweek).mean()
+        future_days = pd.date_range(occupancy_history.index[-1] + timedelta(days=1), periods=days, freq='D')
+        planned = pd.Series(weekday_arrivals.reindex(future_days.dayofweek).values, index=future_days)
+        forecast = forecast_occupancy(planned)
+
+        predictions = []
+        for day, value in forecast.items():
+            entry = {'date': day.strftime('%Y-%m-%d'), 'predicted_containers': int(round(value)),
+                     'planned_arrivals': int(round(planned[day]))}
+            if capacity:
+                entry['utilization_pct'] = round(value / capacity * 100, 1)
+            predictions.append(entry)
+
+        alerts = []
+        if capacity:
+            alerts = [f"Yard predicted to reach {p['utilization_pct']}% capacity on {p['date']}"
+                      for p in predictions if p['utilization_pct'] >= 85]
+
+        occ_metrics = model_metrics['occupancy']
         return jsonify({
             'status': 'success',
-            'model': 'XGBoost (GradientBoosting)',
-            'metrics': {
-                'r2_score': 0.0526,
-                'accuracy_percentage': 5.3,
-                'rmse': 848.72,
-                'mae': 42.98
-            },
-            'features_used': ['lag_1', 'lag_3', 'lag_7', 'lag_14', 'rolling_avg_7'],
-            'note': 'Model trained on daily container counts with lag features'
+            'model': occ_metrics['model'],
+            'metrics': occ_metrics['next_day'],
+            'horizon_mape': occ_metrics['horizon_mape'],
+            'features_used': occ_metrics['features'],
+            'predictions': predictions,
+            'alerts': alerts
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -188,16 +240,16 @@ def predict_occupancy():
 @app.route('/api/reshuffling-stats', methods=['GET'])
 def reshuffling_stats():
     try:
+        sim = model_metrics['reshuffling_simulation']
         return jsonify({
             'status': 'success',
             'simulation_results': {
-                'random_placement_accuracy': 20.3,
-                'ai_driven_accuracy': 100.0,
-                'reshuffles_saved': 1593,
-                'total_containers_simulated': 1000,
-                'improvement': '79.7% improvement in placement accuracy'
+                'random_placement_accuracy': sim['random_placement_accuracy'],
+                'ai_driven_accuracy': sim['ai_driven_accuracy'],
+                'reshuffles_saved': sim['reshuffles_random'] - sim['reshuffles_ai'],
+                'total_containers_simulated': sim['total_containers_simulated']
             },
-            'conclusion': 'AI-driven yard allocation eliminates unnecessary reshuffling'
+            'conclusion': 'AI-driven yard allocation reduces unnecessary reshuffling'
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500

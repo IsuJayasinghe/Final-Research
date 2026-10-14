@@ -1,0 +1,100 @@
+{
+  "dwell_time": {
+    "arima": {
+      "order": [
+        5,
+        1,
+        2
+      ],
+      "holdout": {
+        "rmse": 0.4284,
+        "mae": 0.3561,
+        "mape": 14.3705
+      },
+      "rolling_7d": {
+        "rmse": 0.4282,
+        "mae": 0.368,
+        "mape": 16.7499
+      }
+    },
+    "prophet": {
+      "changepoint_prior_scale": 0.05,
+      "holdout": {
+        "rmse": 0.7879,
+        "mae": 0.6451,
+        "mape": 25.7146
+      },
+      "rolling_7d": {
+        "rmse": 0.681,
+        "mae": 0.5367,
+        "mape": 21.8833
+      }
+    },
+    "best_model": "ARIMA",
+    "mae_difference_pct": -45.8519
+  },
+  "per_container_dwell": {
+    "mae": 1.3563,
+    "rmse": 2.1068,
+    "r2": 0.2934,
+    "baseline_mae": 1.7282,
+    "features": [
+      "Owner_Code",
+      "Hour",
+      "DayOfWeek",
+      "Hours_Since_Baplie",
+      "Hours_Since_Berthing",
+      "Vessel_Call_Size",
+      "Customs_Cleared",
+      "Quarantine_Flag",
+      "Customs_Red_Lane"
+    ]
+  },
+  "occupancy": {
+    "model": "XGBoost",
+    "features": [
+      "Occ_Prev",
+      "Occ_Prev2",
+      "Occ_Prev7",
+      "Arr_Today",
+      "Arr_Prev1",
+      "Arr_Prev2",
+      "Arr_Prev3_7",
+      "DayOfWeek"
+    ],
+    "next_day": {
+      "r2": 0.8618,
+      "rmse": 245.0109,
+      "mae": 193.1945,
+      "mape": 7.294
+    },
+    "horizon_mape": {
+      "1": 7.294,
+      "2": 9.8977,
+      "3": 11.0869,
+      "4": 9.9173,
+      "5": 9.1838,
+      "6": 9.5061,
+      "7": 10.2316,
+      "8": 10.3953,
+      "9": 11.3283,
+      "10": 11.5867,
+      "11": 12.1249,
+      "12": 9.3649,
+      "13": 7.7673,
+      "14": 6.4438
+    }
+  },
+  "reshuffling_simulation": {
+    "random_placement_accuracy": 20.35,
+    "ai_driven_accuracy": 100.0,
+    "reshuffles_random": 1593,
+    "reshuffles_ai": 0,
+    "total_containers_simulated": 2000
+  },
+  "data": {
+    "containers": 95643,
+    "window_start": "2021-07-01",
+    "window_end": "2021-09-20"
+  }
+}
