@@ -166,26 +166,67 @@ def document_scenarios(customs: str | None, missing: int | None) -> list[tuple[s
     return [(c, m, pc * pm) for c, pc in customs_options.items() for m, pm in missing_options.items()]
 
 
-def predict_risk_for_documents(customs: str | None, missing: int | None, **row_args) -> dict:
-    """Risk with optionally unknown document facts.
+# Typical conditions in the training data, used when weather or vessel delay cannot be established.
+VESSEL_PRIOR_DELAYED = 0.12
+WEATHER_PRIOR_MONSOON = {0: 0.40, 1: 0.30, 2: 0.20, 3: 0.10}  # May, Jun, Oct, Nov, Dec
+WEATHER_PRIOR_DRY = {0: 0.70, 1: 0.20, 2: 0.07, 3: 0.03}
+MONSOON_MONTHS = {5, 6, 10, 11, 12}
 
-    Both known -> identical to predict_risk on that row. Otherwise the outcome probabilities are the
-    weighted average over the possible document situations, and the SHAP drivers come from the most
-    likely one."""
-    scenarios = document_scenarios(customs, missing)
-    rows = [
-        build_row(customs_risk_flag=c, missing_documents=m, **row_args)
-        for c, m, _ in scenarios
+
+def weather_scenarios(weather: int | None, month: int) -> list[tuple[int, float]]:
+    if weather is not None:
+        return [(weather, 1.0)]
+    return list((WEATHER_PRIOR_MONSOON if month in MONSOON_MONTHS else WEATHER_PRIOR_DRY).items())
+
+
+def vessel_scenarios(vessel_delay: bool | None) -> list[tuple[bool, float]]:
+    if vessel_delay is not None:
+        return [(vessel_delay, 1.0)]
+    return [(False, 1 - VESSEL_PRIOR_DELAYED), (True, VESSEL_PRIOR_DELAYED)]
+
+
+def predict_risk_for_documents(
+    customs: str | None,
+    missing: int | None,
+    weather_severity: int | None = 0,
+    vessel_delay: bool | None = False,
+    **row_args,
+) -> dict:
+    """Risk where any of customs risk, missing documents, weather and vessel delay may be unknown (None).
+
+    Everything known -> identical to predict_risk on that row. Otherwise the outcome probabilities are the
+    weighted average over the cases still possible (typical situation from the training data), and the SHAP
+    drivers come from the most likely case with the assumed factors left out, so a guess is never shown as
+    a reason."""
+    month = row_args["arrival"].month
+    cases = [
+        (c, m, w, v, pc * pm * pw * pv)
+        for c, pc in ({customs: 1.0} if customs else DOC_PRIOR_CUSTOMS).items()
+        for m, pm in ({min(missing, MODEL_MAX_MISSING): 1.0} if missing is not None else DOC_PRIOR_MISSING).items()
+        for w, pw in weather_scenarios(weather_severity, month)
+        for v, pv in vessel_scenarios(vessel_delay)
     ]
-    weights = np.array([w for _, _, w in scenarios])
+    rows = [
+        build_row(customs_risk_flag=c, missing_documents=m, weather_severity=w, vessel_delay=v, **row_args)
+        for c, m, w, v, _ in cases
+    ]
+    weights = np.array([case[4] for case in cases])
     weights = weights / weights.sum()
     modal = int(np.argmax(weights))
 
+    unknown = {
+        "customs": customs is None,
+        "missing": missing is None,
+        "weather": weather_severity is None,
+        "vessel": vessel_delay is None,
+    }
     out = predict_risk(rows[modal], top_k=10 if len(rows) > 1 else 3)
     if len(rows) > 1:
-        # drivers that only reflect the assumed document situation would present guesses as facts
-        assumed = (["missing_documents_count"] if missing is None else []) + (
-            ["customs_risk_flag_"] if customs is None else []
+        assumed = (
+            (["missing_documents_count"] if unknown["missing"] else [])
+            + (["customs_risk_flag_"] if unknown["customs"] else [])
+            + (["weather_severity"] if unknown["weather"] else [])
+            + (["vessel_delay_flag"] if unknown["vessel"] else [])
         )
         out["drivers"] = [d for d in out["drivers"] if not any(d["feature"].startswith(a) for a in assumed)][:3]
         frame = pd.concat(rows, ignore_index=True)
@@ -195,8 +236,41 @@ def predict_risk_for_documents(customs: str | None, missing: int | None, **row_a
         out["p_on_time"] = round(float(by_class["on_time"]), 4)
         out["p_late"] = round(float(by_class["late"]), 4)
         out["p_no_show"] = round(float(by_class["no_show"]), 4)
-        out["summary"] = explain_sentence(out["p_no_show"], out["drivers"]) + " Documents not checked yet: assumes the typical document situation."
-    out["documents_known"] = customs is not None and missing is not None
-    out["customs_known"] = customs is not None
-    out["missing_known"] = missing is not None
+        notes = []
+        if unknown["customs"] or unknown["missing"]:
+            notes.append("documents not checked yet")
+        if unknown["vessel"]:
+            notes.append("vessel delay not known yet")
+        if unknown["weather"]:
+            notes.append("weather forecast unavailable")
+        out["summary"] = (
+            explain_sentence(out["p_no_show"], out["drivers"]) + " " + notes[0].capitalize()
+            + "".join(f", {n}" for n in notes[1:]) + ": typical situation assumed."
+        )
+    out["documents_known"] = not unknown["customs"] and not unknown["missing"]
+    out["customs_known"] = not unknown["customs"]
+    out["missing_known"] = not unknown["missing"]
+    out["weather_known"] = not unknown["weather"]
+    out["vessel_known"] = not unknown["vessel"]
     return out
+
+
+# ---- carrier profiles (reliability and history come from the model, not from the user) --------------
+
+DEFAULT_RELIABILITY = 0.75  # training-data mean, for a carrier the model has never seen
+
+
+def carrier_profile(carrier: str) -> dict | None:
+    hist = _artifact["carrier_history"].get(carrier)
+    if hist is None:
+        return None
+    return {
+        "carrier": carrier,
+        "reliability": hist.get("reliability", DEFAULT_RELIABILITY),
+        "past_no_show_rate": hist["carrier_hist_no_show_rate"],
+        "avg_lateness_min": hist["carrier_hist_avg_lateness_min"],
+    }
+
+
+def carrier_profiles() -> list[dict]:
+    return [carrier_profile(c) for c in sorted(_artifact["carrier_history"])]

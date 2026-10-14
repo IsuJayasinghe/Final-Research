@@ -106,3 +106,46 @@ def test_document_scenarios_cover_the_prior():
     scen = noshow.document_scenarios(None, None)
     assert len(scen) == 12 and abs(sum(w for *_, w in scen) - 1) < 1e-9
     assert noshow.document_scenarios("low", 9) == [("low", 3, 1.0)]  # missing count is capped at the trained range
+
+
+# ---- unknown weather and vessel delay, carrier profiles ----------------------------------------------
+
+def test_unknown_weather_falls_between_clear_and_storm():
+    clear = noshow.predict_risk_for_documents("low", 0, **args(weather_severity=0))["p_no_show"]
+    storm = noshow.predict_risk_for_documents("low", 0, **args(weather_severity=3))["p_no_show"]
+    unknown = noshow.predict_risk_for_documents("low", 0, **args(weather_severity=None))
+    assert clear < unknown["p_no_show"] < storm
+    assert unknown["weather_known"] is False and "weather forecast unavailable" in unknown["summary"]
+    assert not any(d["feature"] == "weather_severity" for d in unknown["drivers"])
+
+
+def test_unknown_vessel_delay_falls_between_on_time_and_delayed():
+    on_time = noshow.predict_risk_for_documents("low", 0, **args(vessel_delay=False))["p_no_show"]
+    delayed = noshow.predict_risk_for_documents("low", 0, **args(vessel_delay=True))["p_no_show"]
+    unknown = noshow.predict_risk_for_documents("low", 0, **args(vessel_delay=None))
+    assert on_time < unknown["p_no_show"] < delayed
+    assert unknown["vessel_known"] is False and "vessel delay not known yet" in unknown["summary"]
+
+
+def test_everything_unknown_is_still_a_valid_distribution_and_names_each_gap():
+    out = noshow.predict_risk_for_documents(None, None, **args(weather_severity=None, vessel_delay=None))
+    assert abs(out["p_on_time"] + out["p_late"] + out["p_no_show"] - 1) < 1e-3
+    assert "documents not checked yet".capitalize() in out["summary"]
+    assert "vessel delay not known yet" in out["summary"] and "weather forecast unavailable" in out["summary"]
+    assert not any(out[k] for k in ("documents_known", "weather_known", "vessel_known"))
+
+
+def test_weather_prior_is_seasonal():
+    monsoon = noshow.weather_scenarios(None, 11)
+    dry = noshow.weather_scenarios(None, 2)
+    assert dict(monsoon)[0] < dict(dry)[0]  # clear days are rarer in the monsoon
+    assert abs(sum(w for _, w in monsoon) - 1) < 1e-9 and noshow.weather_scenarios(2, 11) == [(2, 1.0)]
+
+
+def test_carrier_profiles_come_from_the_model():
+    b = noshow.carrier_profile("Carrier-B")
+    assert 0.45 < b["reliability"] < 0.6 and b["past_no_show_rate"] > 0.15  # the unreliable carrier
+    j = noshow.carrier_profile("Carrier-J")
+    assert j["reliability"] > 0.8 and j["past_no_show_rate"] < 0.06
+    assert noshow.carrier_profile("Carrier-ZZZ") is None
+    assert [p["carrier"] for p in noshow.carrier_profiles()][:2] == ["Carrier-A", "Carrier-B"]
