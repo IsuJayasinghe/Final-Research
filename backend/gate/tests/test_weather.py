@@ -85,3 +85,41 @@ def test_dates_outside_the_forecast_range_are_unknown_without_calling_the_api():
     assert weather.get_weather("not-a-date", fetch=boom, today=TODAY)["source"] == "invalid-date"
     last_ok = (TODAY + timedelta(days=weather.FORECAST_DAYS - 1)).isoformat()
     assert weather.get_weather(last_ok, fetch=fake(), today=TODAY)["severity"] == 2
+
+
+def test_a_single_network_failure_is_retried(monkeypatch):
+    import io
+    import json
+    import urllib.error
+
+    calls = []
+
+    class Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def flaky(url, timeout=None):
+        calls.append(url)
+        if len(calls) == 1:
+            raise urllib.error.URLError("temporary failure")
+        body = {"daily": {"weather_code": [81], "precipitation_sum": [13.1], "wind_speed_10m_max": [12.2]}}
+        return Resp(json.dumps(body).encode())
+
+    monkeypatch.setattr(weather.urllib.request, "urlopen", flaky)
+    monkeypatch.setattr(weather.time, "sleep", lambda s: None)
+    raw = weather._fetch_open_meteo(DAY)
+    assert raw == {"weather_code": 81, "precipitation_mm": 13.1, "wind_kmh": 12.2} and len(calls) == 2
+
+
+def test_two_failures_in_a_row_give_unavailable(monkeypatch):
+    import urllib.error
+
+    def down(url, timeout=None):
+        raise urllib.error.URLError("offline")
+
+    monkeypatch.setattr(weather.urllib.request, "urlopen", down)
+    monkeypatch.setattr(weather.time, "sleep", lambda s: None)
+    assert weather._fetch_open_meteo(DAY) is None

@@ -20,9 +20,10 @@ from typing import Callable
 
 PORT_LATITUDE, PORT_LONGITUDE = 6.94, 79.84  # Colombo
 FORECAST_DAYS = 16  # Open-Meteo's forecast horizon
-TIMEOUT_S = 5
+TIMEOUT_S = 6
+ATTEMPTS = 2  # one retry: a single network hiccup should not make the forecast "unavailable"
 CACHE_OK_S = 3 * 3600
-CACHE_FAIL_S = 120  # remember a failure briefly so an offline machine does not wait on every request
+CACHE_FAIL_S = 30  # remember a failure briefly so an offline machine does not wait on every request
 LABELS = ["Clear", "Light rain", "Heavy rain", "Storm"]
 
 _cache: dict[str, tuple[float, dict]] = {}
@@ -53,16 +54,19 @@ def _fetch_open_meteo(day: str) -> dict | None:
             "end_date": day,
         }
     )
-    try:
-        with urllib.request.urlopen(f"https://api.open-meteo.com/v1/forecast?{query}", timeout=TIMEOUT_S) as resp:
-            daily = json.load(resp)["daily"]
-        return {
-            "weather_code": daily["weather_code"][0],
-            "precipitation_mm": daily["precipitation_sum"][0],
-            "wind_kmh": daily["wind_speed_10m_max"][0],
-        }
-    except (urllib.error.URLError, TimeoutError, KeyError, IndexError, ValueError, OSError):
-        return None
+    for attempt in range(ATTEMPTS):
+        try:
+            with urllib.request.urlopen(f"https://api.open-meteo.com/v1/forecast?{query}", timeout=TIMEOUT_S) as resp:
+                daily = json.load(resp)["daily"]
+            return {
+                "weather_code": daily["weather_code"][0],
+                "precipitation_mm": daily["precipitation_sum"][0],
+                "wind_kmh": daily["wind_speed_10m_max"][0],
+            }
+        except (urllib.error.URLError, TimeoutError, KeyError, IndexError, ValueError, OSError):
+            if attempt + 1 < ATTEMPTS:
+                time.sleep(0.5)
+    return None
 
 
 def _result(day: str, severity: int | None, source: str, **extra) -> dict:

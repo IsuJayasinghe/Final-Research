@@ -8,11 +8,17 @@ import pytest  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
-def _no_real_network_for_weather(monkeypatch):
-    """Tests never call the real weather API; an unreachable forecast must be handled gracefully."""
+def _no_real_network(monkeypatch):
+    """Tests never call a real external API: the forecast is unreachable unless a test supplies its own."""
+    import urllib.error
+
     import weather
 
-    monkeypatch.setattr(weather, "_fetch_open_meteo", lambda day: None)
+    def offline(*args, **kwargs):
+        raise urllib.error.URLError("network disabled in tests")
+
+    monkeypatch.setattr(weather.urllib.request, "urlopen", offline)
+    monkeypatch.setattr(weather.time, "sleep", lambda s: None)
     weather.clear_cache()
     yield
     weather.clear_cache()
