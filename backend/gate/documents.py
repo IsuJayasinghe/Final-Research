@@ -280,6 +280,19 @@ def extract_fields(text: str) -> dict:
     if m:
         fields["licence_no"] = m.group(1)
 
+    m = re.search(r"\bHS[\s\-]*(?:CODE)?[\s:\-]*(\d{4}(?:[.\s]?\d{2}){0,3})\b", upper)
+    if m:
+        digits = re.sub(r"\D", "", m.group(1))
+        fields["hs_code"] = digits[:4] + ("." + digits[4:6] if len(digits) > 4 else "")
+
+    m = re.search(r"DECLARATION\s*(?:NO\.?|NUMBER|#)\s*[:\-]?\s*([A-Z0-9][A-Z0-9\-]{5,})", upper)
+    if m:
+        fields["declaration_no"] = m.group(1)
+
+    m = re.search(r"(?:GOODS|DESCRIPTION)[^:\n]{0,20}:\s*([^\n]{3,80})", text, flags=re.IGNORECASE)
+    if m:
+        fields["goods_description"] = m.group(1).strip()
+
     m = re.search(r"\bUN\s?(\d{4})\b", upper)
     if m:
         fields["un_number"] = "UN" + m.group(1)
@@ -292,6 +305,45 @@ def extract_fields(text: str) -> dict:
     if dates:
         fields["dates"] = dates
     return fields
+
+
+# ------------------------------------------------------------ customs risk from the CUSDEC
+
+# Illustrative HS-chapter risk table. A real deployment would use the customs authority's own risk profile.
+HS_CHAPTER_HIGH = {
+    "22": "alcohol", "24": "tobacco", "36": "explosives and pyrotechnics",
+    "71": "precious stones and metals", "93": "arms and ammunition", "97": "art and antiques",
+}
+HS_CHAPTER_MEDIUM = {
+    "27": "mineral fuels and oils", "28": "inorganic chemicals", "29": "organic chemicals",
+    "30": "pharmaceuticals", "38": "chemical products", "84": "machinery", "85": "electrical equipment",
+    "87": "vehicles",
+}
+_LEVELS = ["low", "medium", "high"]
+
+
+def assess_customs_risk(fields: dict) -> dict:
+    """Customs risk level (low / medium / high) and the reasons, from a CUSDEC's extracted fields."""
+    reasons: list[str] = []
+    hs = fields.get("hs_code")
+    if hs:
+        chapter = hs[:2]
+        if chapter in HS_CHAPTER_HIGH:
+            level = 2
+            reasons.append(f"HS {hs}: {HS_CHAPTER_HIGH[chapter]} are high-scrutiny goods.")
+        elif chapter in HS_CHAPTER_MEDIUM:
+            level = 1
+            reasons.append(f"HS {hs}: {HS_CHAPTER_MEDIUM[chapter]} get extra customs checks.")
+        else:
+            level = 0
+            reasons.append(f"HS {hs}: ordinary goods.")
+    else:
+        level = 1
+        reasons.append("No HS code on the declaration, so the goods cannot be risk-profiled.")
+    if not fields.get("declaration_no"):
+        level = min(level + 1, 2)
+        reasons.append("No declaration number found; an incomplete declaration raises scrutiny.")
+    return {"level": _LEVELS[level], "reasons": reasons, "hs_code": hs}
 
 
 # ----------------------------------------------------------- classification
@@ -367,6 +419,12 @@ def validate(doc_key: str, text: str, fields: dict, scores: dict, ocr_conf: floa
         if expected_date and fields.get("dates") and expected_date not in fields["dates"]:
             issues.append(_issue("warning", "date_mismatch", f"Gate pass date ({', '.join(fields['dates'])}) differs from the appointment date ({expected_date})."))
 
+    if doc_key == "cusdec":
+        if not fields.get("hs_code"):
+            issues.append(_issue("warning", "hs_missing", "No HS code found on the customs document; customs risk is treated as medium."))
+        if not fields.get("declaration_no"):
+            issues.append(_issue("warning", "declaration_missing", "No declaration number found on the customs document."))
+
     if doc_key == "driver_docs" and not (fields.get("licence_no") or fields.get("plate")):
         issues.append(_issue("error", "driver_ids_missing", "No driving licence number or vehicle registration found."))
 
@@ -399,7 +457,9 @@ def check_document(data: bytes, filename: str, doc_key: str, ctx: dict | None = 
         issues = validate(doc_key, ocr.text, fields, scores, ocr.confidence, ctx)
         status = "flagged" if any(i["level"] == "error" for i in issues) else "cleared"
 
+    assessment = assess_customs_risk(fields) if doc_key == "cusdec" and status != "unreadable" else None
     return {
+        "customs_assessment": assessment,
         "doc_key": doc_key,
         "label": DOCUMENT_LABELS[doc_key],
         "filename": filename,
