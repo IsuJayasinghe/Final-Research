@@ -28,6 +28,7 @@ runs the component standalone.
 | GET | `/api/appointments/{id}/documents` | OCR verdicts recorded for an appointment |
 | POST | `/api/appointments/{id}/documents/submit` | Count cleared vs missing/flagged documents and re-score no-show risk and clearance time |
 | GET | `/api/documents/required?container_type=` | Required document slots for a container type |
+| GET | `/api/documents/templates?container_type=` | What each document must contain (required and optional details) |
 | GET | `/api/weather?date=` / `/api/carriers` / `/api/vessel-delay?vessel=&date=` | The derived conditions above |
 | POST | `/api/assign-appointment` | Original single-shot lane+slot assignment (no persistence) |
 | POST | `/api/predict-clearance` | Clearance-time model on its own |
@@ -63,6 +64,26 @@ medium; other goods low; a missing HS code or declaration number raises the leve
 `documents.py` is illustrative; a real deployment would use the customs authority's own risk profile.
 If no customs declaration was checked, customs risk stays unknown.
 
+## Document templates: is the document complete? (`templates.py`)
+Every document type has a **template**: the details it must contain, which are required or optional, and how each is
+validated. After OCR extracts the details, the template gives a field-by-field checklist (ok / missing / invalid) and a
+completeness score; a document is `cleared` only when every required detail is present and valid.
+
+| Document | Required details (optional in brackets) |
+|---|---|
+| Booking confirmation | booking no., container, vessel, voyage, port of loading, port of discharge, sailing date (shipper) |
+| CUSDEC | declaration no., HS code, goods description, exporter, consignee, container, date |
+| Gate pass | truck ID, vehicle registration, container, valid-until not before the appointment date (valid-from) |
+| VGM | container, weight 1,000-40,000 kg, method 1 or 2, date of weighing (signatory) |
+| Container and seal | container, seal number |
+| Driver and vehicle | driver name, licence number, vehicle registration |
+| Special cargo | hazardous: container, UN number, IMDG class 1-9, packing group; reefer: container, set point -40 to 30 C (pre-trip inspection) |
+
+Adding a document type or a required detail is one entry in `TEMPLATES`. Cross-checks against the booking (container
+mismatch, wrong truck, wrong document type, low OCR quality) stay in `documents.validate`; completeness lives only in
+the templates. `GET /api/documents/templates?container_type=` returns the templates for the UI, each upload returns its
+`template` checklist, and the submission stores per-document completeness and the missing details.
+
 ## OCR document checking (`documents.py`)
 Uploads are read with **RapidOCR** (ONNX, pip-only - no Tesseract install); digital PDFs use their text
 layer, scanned PDFs are rendered then OCR'd. Each file then goes through:
@@ -81,7 +102,8 @@ change is logged as a `DOCUMENTS_CHECKED` event. Files are processed in memory a
 
 Demo files: `python tools/make_sample_documents.py [dir] [YYYY-MM-DD]` writes good and faulty sample documents
 (git-ignored, dated tomorrow by default) for container `CSQU3054383`, truck `TRK-80579`, including customs
-declarations of low, medium, high and incomplete risk (`cusdec*.png`).
+declarations of low, medium, high and incomplete risk (`cusdec*.png`), a reefer certificate, and incomplete or expired
+variants (`*_incomplete.png`, `gate_pass_expired.png`) for the completeness checks.
 
 ## Storage
 By default bookings live in memory. To save them in the shared PostgreSQL database:
