@@ -65,17 +65,23 @@ class GateService:
 
     @staticmethod
     def _clearance(a: Appointment, slot: datetime, queue: float) -> float:
-        return ml_models.predict_clearance_minutes(
-            day_of_week=slot.strftime("%A"),
-            container_type=a.container_type,
-            cargo_category=a.cargo_category,
-            carrier_company=a.carrier,
-            arrival_hour=slot.hour,
-            queue_length_at_arrival=queue,
-            customs_risk_flag=a.customs_risk_flag,
-            carrier_past_reliability_score=a.carrier_reliability,
-            missing_documents_count=a.missing_documents,
-        )
+        """Predicted clearance minutes. Unknown document facts are averaged over the typical situation."""
+        scenarios = noshow.document_scenarios(a.customs_risk_flag, a.missing_documents)
+        total = sum(w for _, _, w in scenarios)
+        minutes = 0.0
+        for customs, missing, weight in scenarios:
+            minutes += weight * ml_models.predict_clearance_minutes(
+                day_of_week=slot.strftime("%A"),
+                container_type=a.container_type,
+                cargo_category=a.cargo_category,
+                carrier_company=a.carrier,
+                arrival_hour=slot.hour,
+                queue_length_at_arrival=queue,
+                customs_risk_flag=customs,
+                carrier_past_reliability_score=a.carrier_reliability,
+                missing_documents_count=missing,
+            )
+        return round(minutes / total, 1)
 
     # -- booking ----------------------------------------------------------
     def create(self, req: dict, now: datetime | None = None) -> dict:
@@ -91,19 +97,20 @@ class GateService:
             raise BookingError("Planned arrival must be in the future (next full hour or later).")
 
         lead_hours = (requested - now).total_seconds() / 3600
-        row = noshow.build_row(
+        # Customs risk and missing documents are normally unknown at booking (None): they are established
+        # later by reading the documents with OCR. Callers may still pass known values explicitly.
+        risk = noshow.predict_risk_for_documents(
+            req.get("customs_risk_flag"),
+            req.get("missing_documents"),
             arrival=requested,
             carrier=req["carrier"],
             container_type=req["container_type"],
             cargo_category=req["cargo_category"],
-            customs_risk_flag=req["customs_risk_flag"],
-            missing_documents=req["missing_documents"],
             carrier_reliability=req["carrier_reliability"],
             lead_time_hours=lead_hours,
             weather_severity=req.get("weather_severity", 0),
             vessel_delay=req.get("vessel_delay", False),
         )
-        risk = noshow.predict_risk(row)
 
         states = [_to_state(a) for a in self.repo.list(ACTIVE_STATUSES)]
         decision = scheduler.decide_slot(requested, risk["p_no_show"], states, earliest, self._wait)
@@ -117,8 +124,8 @@ class GateService:
             requested_slot=requested,
             assigned_slot=decision.slot,
             status=decision.status,
-            customs_risk_flag=req["customs_risk_flag"],
-            missing_documents=req["missing_documents"],
+            customs_risk_flag=req.get("customs_risk_flag"),
+            missing_documents=req.get("missing_documents"),
             carrier_reliability=req["carrier_reliability"],
             p_no_show=risk["p_no_show"],
             p_late=risk["p_late"],
@@ -198,27 +205,28 @@ class GateService:
         self._require(appointment_id)
         return self._doc_results.get(appointment_id, {})
 
-    def _rescore(self, a: Appointment, missing: int) -> tuple[dict, float | None]:
-        """No-show risk and clearance time for this booking with a given missing-document count."""
+    def _rescore(self, a: Appointment, missing: int | None, customs: str | None) -> tuple[dict, float | None]:
+        """No-show risk and clearance time for this booking given what is known about its documents
+        (None = not known yet, so the typical situation is assumed)."""
         lead = max(1.0, (a.requested_slot - datetime.now()).total_seconds() / 3600)
-        capped = min(missing, MODEL_MAX_MISSING)
-        row = noshow.build_row(
+        risk = noshow.predict_risk_for_documents(
+            customs,
+            missing,
             arrival=a.requested_slot,
             carrier=a.carrier,
             container_type=a.container_type,
             cargo_category=a.cargo_category,
-            customs_risk_flag=a.customs_risk_flag,
-            missing_documents=capped,
             carrier_reliability=a.carrier_reliability,
             lead_time_hours=lead,
             weather_severity=a.weather_severity,
             vessel_delay=a.vessel_delay,
         )
-        risk = noshow.predict_risk(row)
         clearance = None
         if a.assigned_slot:
             _, queue, _ = self._lane_for(a.assigned_slot)
-            clearance = self._clearance(dataclasses.replace(a, missing_documents=capped), a.assigned_slot, queue)
+            clearance = self._clearance(
+                dataclasses.replace(a, missing_documents=missing, customs_risk_flag=customs), a.assigned_slot, queue
+            )
         return risk, clearance
 
     def submit_documents(self, appointment_id: int) -> dict:
@@ -235,14 +243,22 @@ class GateService:
         cleared = [k for k, v in statuses.items() if v == "cleared"]
         missing = len(required) - len(cleared)
 
-        old_missing = a.missing_documents  # the in-memory repo returns live objects; read before updating
-        before_risk, before_clearance = self._rescore(a, old_missing)
-        after_risk, after_clearance = self._rescore(a, missing)
+        # the in-memory repo returns live objects, so read the old values before updating
+        old_missing, old_customs = a.missing_documents, a.customs_risk_flag
+        cusdec = results.get("cusdec")
+        assessment = cusdec.get("customs_assessment") if cusdec else None
+        new_customs = assessment["level"] if assessment else old_customs  # unknown stays unknown
+
+        before_risk, before_clearance = self._rescore(a, old_missing, old_customs)
+        after_risk, after_clearance = self._rescore(a, missing, new_customs)
         summary = f"{len(cleared)} of {len(required)} required documents cleared; {missing} missing or flagged."
+        if assessment:
+            summary += f" Customs risk from the declaration: {assessment['level']}."
 
         self.repo.update(
             a.id,
             missing_documents=missing,
+            customs_risk_flag=new_customs,
             p_no_show=after_risk["p_no_show"],
             p_late=after_risk["p_late"],
             risk_summary=after_risk["summary"],
@@ -286,8 +302,19 @@ class GateService:
             "required": [{"doc_key": k, "label": documents.DOCUMENT_LABELS[k], "status": statuses[k]} for k in required],
             "cleared": len(cleared),
             "missing": missing,
-            "before": {"missing_documents": old_missing, "p_no_show": before_p, "clearance_minutes": before_clearance},
-            "after": {"missing_documents": missing, "p_no_show": after_p, "clearance_minutes": after_clearance},
+            "before": {
+                "missing_documents": old_missing,
+                "customs_risk": old_customs,
+                "p_no_show": before_p,
+                "clearance_minutes": before_clearance,
+            },
+            "after": {
+                "missing_documents": missing,
+                "customs_risk": new_customs,
+                "p_no_show": after_p,
+                "clearance_minutes": after_clearance,
+            },
+            "customs_assessment": assessment,
             "drivers": after_risk["drivers"],
             "issues": issues,
         }
