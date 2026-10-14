@@ -97,6 +97,11 @@ export const submitDocuments = (id) => postJson(`/api/appointments/${id}/documen
 export const getCarriers = () => getJson('/api/carriers')
 export const getWeather = (date) => getJson(`/api/weather?date=${encodeURIComponent(date)}`)
 
+// gate monitor: forecast congestion per hour of a day, and every lane at one hour with its booked trucks
+export const getCongestionProfile = (date) => getJson(`/api/congestion/profile?date=${encodeURIComponent(date)}`)
+export const getLaneView = (date, hour) =>
+  getJson(`/api/lane-view?date=${encodeURIComponent(date)}&hour=${hour}`)
+
 export const getModelMetrics = () => getJson('/api/model-metrics')
 
 export function getCongestion() {
