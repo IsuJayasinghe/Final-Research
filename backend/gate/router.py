@@ -27,6 +27,7 @@ from schemas import (
     CongestionResponse,
     DisruptionRequest,
     LaneCongestion,
+    RejectRequest,
     ModelInputs,
 )
 
@@ -161,6 +162,8 @@ def assign_appointment(request: AppointmentRequest):
 def _run(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
+    except service.NotApproved as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except service.BookingError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -173,8 +176,10 @@ def create_appointment(request: BookingRequest):
 
 
 @router.get("/appointments")
-def list_appointments():
-    return service.get_service().list()
+def list_appointments(truck_id: str | None = None, status: str | None = None):
+    """Saved appointments, optionally only one truck's (a driver looks up their own) or one status."""
+    statuses = [s.strip().upper() for s in status.split(",")] if status else None
+    return service.get_service().list(truck_id=truck_id, statuses=statuses)
 
 
 @router.get("/appointments/{appointment_id}/events")
@@ -182,9 +187,22 @@ def appointment_events(appointment_id: int):
     return _run(service.get_service().events, appointment_id)
 
 
+@router.post("/appointments/{appointment_id}/approve")
+def approve_appointment(appointment_id: int):
+    """Gate admin approves the request; the driver can then upload documents."""
+    return _run(service.get_service().approve, appointment_id).to_dict()
+
+
 @router.post("/appointments/{appointment_id}/confirm")
 def confirm_appointment(appointment_id: int):
-    return _run(service.get_service().confirm, appointment_id).to_dict()
+    """Same as approve (kept for older clients)."""
+    return _run(service.get_service().approve, appointment_id).to_dict()
+
+
+@router.post("/appointments/{appointment_id}/reject")
+def reject_appointment(appointment_id: int, body: RejectRequest):
+    """Gate admin declines the request with a reason the driver will see."""
+    return _run(service.get_service().reject, appointment_id, body.reason).to_dict()
 
 
 @router.post("/appointments/{appointment_id}/cancel")
@@ -256,6 +274,8 @@ def check_document(
         return service.get_service().check_document(data, file.filename or "", doc_key, appointment_id, ctx)
     except documents.DocumentError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except service.NotApproved as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except service.BookingError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ImportError:

@@ -93,3 +93,7 @@ class DisruptionRequest(BaseModel):
     window_hours: int = Field(4, ge=1, le=12)
     # When the disruption begins (ISO, e.g. 2030-01-07T10:00); defaults to the next full hour.
     start: str | None = None
+
+
+class RejectRequest(BaseModel):
+    reason: str = Field("", max_length=300)

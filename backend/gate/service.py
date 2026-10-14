@@ -43,6 +43,10 @@ class BookingError(ValueError):
     """The request cannot be accepted (bad time, unknown id, wrong status)."""
 
 
+class NotApproved(BookingError):
+    """The action needs the gate admin's approval of the appointment first (e.g. uploading documents)."""
+
+
 def _next_hour(now: datetime) -> datetime:
     return scheduler.hour_floor(now) + timedelta(hours=1)
 
@@ -52,8 +56,10 @@ def _to_state(a: Appointment) -> BookingState:
 
 
 class GateService:
-    def __init__(self, repo):
+    def __init__(self, repo, require_approval: bool = False):
         self.repo = repo
+        # When True (the running app), documents can only be uploaded for an appointment the gate admin has approved.
+        self.require_approval = require_approval
         self.disruption: Disruption | None = None
         self._doc_results: dict[int, dict[str, dict]] = {}  # appointment id -> document slot -> OCR verdict
 
@@ -236,6 +242,7 @@ class GateService:
         appointment = None
         if appointment_id is not None:
             appointment = self._require(appointment_id)
+            self._require_approved(appointment)
             slot = appointment.assigned_slot or appointment.requested_slot
             ctx.update(
                 expected_container_id=appointment.container_id,
@@ -283,6 +290,7 @@ class GateService:
         a = self._require(appointment_id)
         if a.status == "CANCELLED":
             raise BookingError("This appointment is cancelled.")
+        self._require_approved(a)
         results = self._doc_results.get(a.id, {})
         if not results:
             raise BookingError("Upload and check at least one document first.")
@@ -416,12 +424,37 @@ class GateService:
             raise BookingError(f"Appointment {appointment_id} not found")
         return a
 
-    def confirm(self, appointment_id: int) -> Appointment:
+    def _require_approved(self, a: Appointment) -> None:
+        """Documents are only accepted after the gate admin approves the appointment."""
+        if self.require_approval and a.status != "CONFIRMED":
+            wait = {
+                "PENDING": "is still waiting for the gate admin to approve it",
+                "WAITLISTED": "is on the waiting list",
+                "REJECTED": "was rejected by the gate admin",
+                "CANCELLED": "is cancelled",
+            }.get(a.status, f"is {a.status}")
+            raise NotApproved(f"Documents can be uploaded once the gate admin approves the appointment; this one {wait}.")
+
+    def approve(self, appointment_id: int, note: str = "") -> Appointment:
+        """Gate admin approves a requested appointment: the slot is fixed and document upload opens."""
         a = self._require(appointment_id)
         if a.status != "PENDING":
-            raise BookingError(f"Only PENDING appointments can be confirmed (this one is {a.status}).")
+            raise BookingError(f"Only appointments awaiting approval can be approved (this one is {a.status}).")
         self.repo.update(appointment_id, status="CONFIRMED")
-        self.repo.add_event(appointment_id, "CONFIRMED", a.assigned_slot, a.assigned_slot, "Confirmed by carrier")
+        message = "Approved by the gate admin. Upload your documents to complete the pre-clearance."
+        self.repo.add_event(appointment_id, "APPROVED", a.assigned_slot, a.assigned_slot, (note + " " + message).strip())
+        return self.repo.get(appointment_id)
+
+    confirm = approve  # the carrier no longer confirms its own booking; kept for older callers
+
+    def reject(self, appointment_id: int, reason: str = "") -> Appointment:
+        """Gate admin declines a requested appointment; the slot is released and the driver sees the reason."""
+        a = self._require(appointment_id)
+        if a.status not in ("PENDING", "WAITLISTED"):
+            raise BookingError(f"Only appointments awaiting approval can be rejected (this one is {a.status}).")
+        reason = reason.strip() or "No reason given."
+        self.repo.update(appointment_id, status="REJECTED", decision_reason=f"Rejected by the gate admin: {reason}")
+        self.repo.add_event(appointment_id, "REJECTED", a.assigned_slot, None, f"Rejected by the gate admin: {reason}")
         return self.repo.get(appointment_id)
 
     def cancel(self, appointment_id: int) -> Appointment:
@@ -432,8 +465,12 @@ class GateService:
         self.repo.add_event(appointment_id, "CANCELLED", a.assigned_slot, None, "Cancelled by carrier")
         return self.repo.get(appointment_id)
 
-    def list(self) -> list[dict]:
-        return [a.to_dict() for a in self.repo.list()]
+    def list(self, truck_id: str | None = None, statuses: list[str] | None = None) -> list[dict]:
+        rows = self.repo.list(statuses)
+        if truck_id:
+            wanted = truck_id.strip().upper()
+            rows = [a for a in rows if a.truck_id.upper() == wanted]
+        return [a.to_dict() for a in rows]
 
     def events(self, appointment_id: int) -> list[dict]:
         self._require(appointment_id)
@@ -608,7 +645,7 @@ _service: GateService | None = None
 
 def init(repo) -> GateService:
     global _service
-    _service = GateService(repo)
+    _service = GateService(repo, require_approval=True)  # the running app: documents unlock after admin approval
     return _service
 
 
