@@ -83,6 +83,11 @@ def test_full_flow_over_http_book_check_submit(client, sample_dir):
     aid = created.json()["appointment"]["id"]
     before = created.json()["risk"]["p_no_show"]
 
+    # documents are locked until the gate admin approves the request
+    locked = post_doc(client, sample_dir, "vgm", "vgm", appointment_id=aid)
+    assert locked.status_code == 409 and "gate admin approves" in locked.json()["detail"]
+    assert client.post(f"/api/appointments/{aid}/approve").status_code == 200
+
     slots = {"booking_confirmation": "booking_confirmation", "cusdec": "cusdec", "gate_pass": "gate_pass", "vgm": "vgm",
              "seal_photo": "seal_match", "driver_docs": "driver_docs", "special_cargo": "special_cargo"}
     for name, slot in slots.items():
@@ -156,3 +161,19 @@ def test_monitor_endpoints_over_http(client):
     view = client.get("/api/lane-view?date=2031-03-12&hour=16").json()
     assert len(view["lanes"]) == 6 and all(l["status"] == "congested" or l["status"] == "busy" for l in view["lanes"])
     assert client.get("/api/lane-view?date=2031-03-12&hour=99").status_code == 422
+
+
+def test_approval_endpoints_over_http(client):
+    booking = {"truck_id": "TRK-APR1", "container_id": "CSQU3054383", "carrier": "Carrier-A", "cargo_category": "export",
+               "container_type": "standard", "arrival_date": "2031-03-14", "arrival_hour": 11}
+    one = client.post("/api/appointments", json=booking).json()["appointment"]
+    two = client.post("/api/appointments", json={**booking, "truck_id": "TRK-APR2"}).json()["appointment"]
+    assert one["status"] == "PENDING"
+    assert client.post(f"/api/appointments/{one['id']}/approve").json()["status"] == "CONFIRMED"
+    rejected = client.post(f"/api/appointments/{two['id']}/reject", json={"reason": "Over capacity"}).json()
+    assert rejected["status"] == "REJECTED" and "Over capacity" in rejected["decision_reason"]
+    assert client.post(f"/api/appointments/{two['id']}/approve").status_code == 422
+    mine = client.get("/api/appointments?truck_id=trk-apr1").json()
+    assert [a["id"] for a in mine] == [one["id"]]
+    assert {a["status"] for a in client.get("/api/appointments?status=REJECTED,CONFIRMED").json()} <= {"REJECTED", "CONFIRMED"}
+    assert client.post("/api/appointments/99999/approve").status_code == 422
