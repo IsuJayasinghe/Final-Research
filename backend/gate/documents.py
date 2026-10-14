@@ -20,6 +20,8 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime
 
+from templates import VGM_MAX_KG, VGM_MIN_KG, evaluate_template  # noqa: F401 (VGM limits re-exported)
+
 MAX_BYTES = 8 * 1024 * 1024
 MAX_PDF_PAGES = 3
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
@@ -28,7 +30,6 @@ ALLOWED_EXTENSIONS = IMAGE_EXTENSIONS | {".pdf"}
 MIN_OCR_CONFIDENCE = 0.55  # below this the image is treated as unreadable
 WARN_OCR_CONFIDENCE = 0.75
 MIN_TYPE_SCORE = 3  # classification score needed to accept a document as a given type
-VGM_MIN_KG, VGM_MAX_KG = 1_000, 40_000
 
 DOCUMENT_LABELS = {
     "booking_confirmation": "Booking Confirmation",
@@ -309,10 +310,59 @@ def extract_fields(text: str) -> dict:
     if m:
         fields["temperature_c"] = float(m.group(1))
 
+    # ---- further details the document templates ask for
+    for key, label, stop in (
+        ("port_of_loading", r"PORT\s+OF\s+LOADING", r"PORT\s+OF\s+DISCHARGE"),
+        ("port_of_discharge", r"PORT\s+OF\s+DISCHARGE", r"ETD|ETA|SHIPPER"),
+        ("shipper", r"SHIPPER", ""),
+        ("exporter", r"EXPORTER", r"CONSIGNEE"),
+        ("consignee", r"CONSIGNEE", ""),
+        ("driver_name", r"DRIVER(?:\s*NAME)?", ""),
+        ("signatory", r"(?:AUTHORI[SZ]ED\s+SIGNATORY|SIGNED\s+BY|SIGNATORY)", ""),
+    ):
+        value = _labelled(text, label, stop)
+        if value:
+            fields[key] = value
+
+    for key, label in (("valid_from", r"VALID\s+FROM"), ("valid_until", r"VALID\s+(?:UNTIL|TILL|TO)")):
+        m = re.search(label + r"\s*[:\-]?\s*([0-9]{1,4}[-/.][0-9]{1,2}[-/.][0-9]{1,4})", upper)
+        parsed = _parse_dates(m.group(1)) if m else []
+        if parsed:
+            fields[key] = parsed[0]
+
+    m = re.search(r"\bMETHOD\s*([12])\b", upper)
+    if m:
+        fields["method"] = m.group(1)
+
+    m = re.search(r"(?:IMDG|HAZARD|DG)\s*CLASS\s*[:\-]?\s*([1-9](?:\.[1-9])?)\b", upper)
+    if not m and re.search(r"IMDG|DANGEROUS", upper):
+        m = re.search(r"\bCLASS\s*[:\-]?\s*([1-9](?:\.[1-9])?)\b", upper)
+    if m:
+        fields["imdg_class"] = m.group(1)
+
+    # roman numerals are often misread by OCR as l, 1 or |, so accept those and repair them (Il -> II)
+    m = re.search(r"PACKING\s*GROUP\s*[:\-]?\s*([IL1|]{1,3}|[23])(?![A-Z0-9])", upper)
+    if m:
+        token = m.group(1)
+        fields["packing_group"] = {"2": "II", "3": "III"}.get(token) or "I" * len(token)
+
+    if re.search(r"PRE[\s\-]?TRIP", upper):
+        fields["pre_trip_inspection"] = True
+
     dates = _parse_dates(text)
     if dates:
         fields["dates"] = dates
     return fields
+
+
+def _labelled(text: str, label: str, stop: str = "") -> str | None:
+    """Value after `Label:` up to the next label (`stop` regex) or the end of the line."""
+    tail = rf"(?:{stop}|$)" if stop else r"$"
+    m = re.search(rf"{label}\s*[:\-]\s*(.+?)\s*{tail}", text, flags=re.IGNORECASE | re.MULTILINE)
+    if not m:
+        return None
+    value = re.sub(r"\s+", " ", m.group(1)).strip(" .-")
+    return value if len(value) >= 2 else None
 
 
 # ------------------------------------------------------------ customs risk from the CUSDEC
@@ -378,6 +428,8 @@ def _issue(level: str, code: str, message: str) -> dict:
 
 
 def validate(doc_key: str, text: str, fields: dict, scores: dict, ocr_conf: float, ctx: dict) -> list[dict]:
+    """Cross-checks of a document against the booking and against itself. Whether every required detail is
+    present is the template's job (see check_issues)."""
     issues: list[dict] = []
     expected_label = DOCUMENT_LABELS[doc_key]
     detected = best_type(scores)
@@ -394,30 +446,16 @@ def validate(doc_key: str, text: str, fields: dict, scores: dict, ocr_conf: floa
     if MIN_OCR_CONFIDENCE <= ocr_conf < WARN_OCR_CONFIDENCE:
         issues.append(_issue("warning", "low_quality", f"Image quality is low (OCR confidence {ocr_conf:.0%}); a clearer scan is safer."))
 
-    # container number: must match the booking where the document carries one
+    # container number: must match the booking wherever the document carries one
     expected_container = normalise_container(ctx.get("expected_container_id"))
     found = fields.get("container_numbers", [])
-    needs_container = doc_key in ("booking_confirmation", "vgm", "seal_match", "gate_pass")
-    if expected_container:
-        if found and expected_container not in found:
-            issues.append(
-                _issue("error", "container_mismatch", f"Container number on the document ({', '.join(found)}) does not match the booking ({expected_container}).")
-            )
-        elif not found and needs_container:
-            issues.append(_issue("error", "container_missing", "No container number could be read on this document."))
+    if expected_container and found and expected_container not in found:
+        issues.append(
+            _issue("error", "container_mismatch", f"Container number on the document ({', '.join(found)}) does not match the booking ({expected_container}).")
+        )
     for code in found:
         if not valid_container_number(code):
             issues.append(_issue("warning", "check_digit", f"Container number {code} fails the ISO 6346 check digit - confirm it was read correctly."))
-
-    if doc_key == "vgm":
-        kg = fields.get("weight_kg")
-        if kg is None:
-            issues.append(_issue("error", "weight_missing", "No verified gross mass (kg) found."))
-        elif not VGM_MIN_KG <= kg <= VGM_MAX_KG:
-            issues.append(_issue("error", "weight_range", f"Declared weight {kg:,} kg is outside the plausible range ({VGM_MIN_KG:,}-{VGM_MAX_KG:,} kg)."))
-
-    if doc_key == "seal_match" and not fields.get("seal_number"):
-        issues.append(_issue("error", "seal_missing", "No seal number found. The seal must be visible and readable."))
 
     if doc_key == "gate_pass":
         expected_truck = (ctx.get("expected_truck_id") or "").upper().replace(" ", "")
@@ -426,23 +464,36 @@ def validate(doc_key: str, text: str, fields: dict, scores: dict, ocr_conf: floa
         expected_date = ctx.get("expected_date")
         if expected_date and fields.get("dates") and expected_date not in fields["dates"]:
             issues.append(_issue("warning", "date_mismatch", f"Gate pass date ({', '.join(fields['dates'])}) differs from the appointment date ({expected_date})."))
-
-    if doc_key == "cusdec":
-        if not fields.get("hs_code"):
-            issues.append(_issue("warning", "hs_missing", "No HS code found on the customs document; customs risk is treated as medium."))
-        if not fields.get("declaration_no"):
-            issues.append(_issue("warning", "declaration_missing", "No declaration number found on the customs document."))
-
-    if doc_key == "driver_docs" and not (fields.get("licence_no") or fields.get("plate")):
-        issues.append(_issue("error", "driver_ids_missing", "No driving licence number or vehicle registration found."))
-
-    if doc_key == "special_cargo":
-        ctype = ctx.get("container_type")
-        if ctype == "hazardous" and not fields.get("un_number"):
-            issues.append(_issue("error", "un_missing", "Dangerous goods declaration needs a UN number."))
-        if ctype == "reefer" and fields.get("temperature_c") is None:
-            issues.append(_issue("warning", "temperature_missing", "No set-point temperature found on the reefer document."))
     return issues
+
+
+def template_issues(template: dict) -> list[dict]:
+    """Errors for every REQUIRED detail of the template that is missing or invalid."""
+    issues = []
+    for item in template["fields"]:
+        if not item["required"] or item["status"] == "ok":
+            continue
+        if item["status"] == "missing":
+            code = item["missing_code"] or f"missing_{item['key']}"
+            issues.append(_issue("error", code, f"Missing required detail: {item['label']} ({item['hint']})."))
+        else:
+            code = item["invalid_code"] or f"invalid_{item['key']}"
+            issues.append(_issue("error", code, item["message"] or f"{item['label']} is not valid."))
+    return issues
+
+
+def check_issues(doc_key: str, text: str, fields: dict, scores: dict, ocr_conf: float, ctx: dict) -> tuple[list[dict], dict | None]:
+    """Everything wrong with a document: booking cross-checks plus the template's completeness checks.
+
+    Returns (issues, template evaluation). The template is None when the document is the wrong type, because
+    its details are then meaningless."""
+    issues = validate(doc_key, text, fields, scores, ocr_conf, ctx)
+    if any(i["code"] in ("wrong_document", "unrecognised") for i in issues):
+        return issues, None
+    template = evaluate_template(doc_key, fields, ctx)
+    seen = {i["code"] for i in issues}
+    issues += [i for i in template_issues(template) if i["code"] not in seen]
+    return issues, template
 
 
 def required_documents(container_type: str | None) -> list[str]:
@@ -460,9 +511,10 @@ def check_document(data: bytes, filename: str, doc_key: str, ctx: dict | None = 
 
     if not ocr.text.strip() or ocr.confidence < MIN_OCR_CONFIDENCE:
         status = "unreadable"
+        template = None
         issues = [_issue("error", "unreadable", "The text could not be read reliably. Upload a sharper, well-lit scan or a digital PDF.")]
     else:
-        issues = validate(doc_key, ocr.text, fields, scores, ocr.confidence, ctx)
+        issues, template = check_issues(doc_key, ocr.text, fields, scores, ocr.confidence, ctx)
         status = "flagged" if any(i["level"] == "error" for i in issues) else "cleared"
 
     assessment = assess_customs_risk(fields) if doc_key == "cusdec" and status != "unreadable" else None
@@ -478,6 +530,7 @@ def check_document(data: bytes, filename: str, doc_key: str, ctx: dict | None = 
         "engine": ocr.engine,
         "pages": ocr.pages,
         "fields": fields,
+        "template": template,
         "issues": issues,
         "text_preview": ocr.text[:500],
     }
