@@ -327,6 +327,9 @@ class GateService:
                     return r["fields"][name]
             return None
 
+        # how complete each document is against its template, and which details are missing
+        completeness = {k: (r.get("template") or {}).get("completeness") for k, r in results.items()}
+        missing_details = {k: (r.get("template") or {}).get("missing", []) for k, r in results.items() if (r.get("template") or {}).get("missing")}
         containers = sorted({c for r in results.values() for c in r["fields"].get("container_numbers", [])})
         issues = {k: r["issues"] for k, r in results.items() if r["issues"]}
         self.repo.add_submission(
@@ -344,7 +347,9 @@ class GateService:
             vehicle_details=json.dumps(
                 {"truck_id": field("truck_id"), "plate": field("plate"), "licence_no": field("licence_no")}
             ),
-            clearance_information=json.dumps({"statuses": statuses, "summary": summary, "issues": issues}),
+            clearance_information=json.dumps(
+                {"statuses": statuses, "completeness": completeness, "missing_details": missing_details, "summary": summary, "issues": issues}
+            ),
         )
         before_p, after_p = before_risk["p_no_show"], after_risk["p_no_show"]
         reason = f"{summary} No-show risk {before_p:.0%} -> {after_p:.0%}."
@@ -355,7 +360,16 @@ class GateService:
         return {
             "appointment": self.repo.get(a.id).to_dict(),
             "summary": summary,
-            "required": [{"doc_key": k, "label": documents.DOCUMENT_LABELS[k], "status": statuses[k]} for k in required],
+            "required": [
+                {
+                    "doc_key": k,
+                    "label": documents.DOCUMENT_LABELS[k],
+                    "status": statuses[k],
+                    "completeness": (results.get(k, {}).get("template") or {}).get("completeness"),
+                    "missing_details": (results.get(k, {}).get("template") or {}).get("missing", []),
+                }
+                for k in required
+            ],
             "cleared": len(cleared),
             "missing": missing,
             "before": {
