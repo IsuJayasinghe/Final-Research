@@ -6,7 +6,7 @@ import { cancelAppointment, getLive, listAppointments } from '../../lib/gateApi'
 import { useRole } from '../../lib/role'
 import { STATUS_LABEL, STATUS_STYLES, dayAndHour, hhmm } from '../../lib/status'
 
-const STEPS = ['Request sent', 'Approved by gate admin', 'Documents uploaded', 'Gate day']
+const STEPS = ['Request sent', 'Approved by gate admin', 'Documents uploaded', 'Gate process']
 
 // which step the driver is on, from the live phase
 function stepIndex(phase) {
@@ -19,6 +19,8 @@ function stepIndex(phase) {
     case 'upload_documents':
     case 'fix_documents':
       return 1
+    case 'completed':
+      return 4
     case 'ready':
     default:
       return 3
@@ -272,7 +274,7 @@ export default function MyTrip() {
 
             <div
               className={`mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-sm ${
-                phase === 'rejected' ? LEVEL_STYLES.error : phase === 'arrive_now' ? LEVEL_STYLES.success : 'border-blue-100 bg-blue-50 text-blue-900'
+                phase === 'rejected' ? LEVEL_STYLES.error : phase === 'arrive_now' || phase === 'completed' ? LEVEL_STYLES.success : 'border-blue-100 bg-blue-50 text-blue-900'
               }`}
             >
               <span>
