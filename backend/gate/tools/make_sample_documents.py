@@ -84,13 +84,25 @@ def main(out: Path) -> None:
         f"ETD: {APPT_DATE}   Shipper: Lanka Exports Ltd",
     ], out / "booking_confirmation.png", "Sri Lanka Ports Authority - Terminal Booking")
 
-    render("CUSTOMS CLEARANCE DOCUMENT (CUSDEC)", [
-        "Declaration No: CUS-2026-558120",
-        "Customs Declaration - Export",
-        "Exporter: Lanka Exports Ltd   Consignee: Pacific Imports Pte",
-        "HS Code: 2710.19   Duty: LKR 0.00",
-        f"Container: {CONTAINER}   Date: {APPT_DATE}",
-    ], out / "cusdec.png", "Sri Lanka Customs")
+    def cusdec(name: str, goods: str | None, hs: str | None, declaration: bool = True) -> None:
+        lines = []
+        if declaration:
+            lines.append("Declaration No: CUS-2026-558120")
+        lines.append("Customs Declaration - Export")
+        lines.append("Exporter: Lanka Exports Ltd   Consignee: Pacific Imports Pte")
+        if goods:
+            lines.append(f"Goods: {goods}")
+        if hs:
+            lines.append(f"HS Code: {hs}   Duty: LKR 0.00")
+        lines.append(f"Container: {CONTAINER}   Date: {APPT_DATE}")
+        render("CUSTOMS CLEARANCE DOCUMENT (CUSDEC)", lines, out / f"{name}.png", "Sri Lanka Customs")
+
+    # customs risk is derived from the declaration: medium (fuels), low (ordinary goods),
+    # high (tobacco) and high (incomplete declaration: no declaration number, no HS code)
+    cusdec("cusdec", "Petroleum oils", "2710.19")
+    cusdec("cusdec_low_risk", "Cotton T-shirts", "6109.10")
+    cusdec("cusdec_high_risk", "Cigarettes", "2402.20")
+    cusdec("cusdec_incomplete", None, None, declaration=False)
 
     render("GATE PASS", [
         f"Truck: {TRUCK}   Vehicle No: WP CAB-1234",
