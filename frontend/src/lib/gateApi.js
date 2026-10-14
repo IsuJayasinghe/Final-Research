@@ -48,9 +48,8 @@ export function createAppointment(form) {
     carrier: form.carrier,
     cargo_category: form.cargoCategory,
     container_type: form.containerType,
-    customs_risk_flag: form.customsRiskFlag,
+    // customs risk and missing documents are established later by reading the documents with OCR
     carrier_reliability: Number(form.carrierReliability),
-    missing_documents: Number(form.missingDocuments),
     arrival_date: form.preferredDate,
     arrival_hour: Number(form.arrivalHour),
     weather_severity: Number(form.weatherSeverity),
