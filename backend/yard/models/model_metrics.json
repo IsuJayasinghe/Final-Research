@@ -93,11 +93,32 @@
     }
   },
   "reshuffling_simulation": {
-    "random_placement_accuracy": 20.35,
-    "ai_driven_accuracy": 100.0,
-    "reshuffles_random": 1593,
-    "reshuffles_ai": 0,
-    "total_containers_simulated": 2000
+    "containers_simulated": 17051,
+    "runs": 5,
+    "tier_height": 4,
+    "container_type_mix": {
+      "DRY": 63.3,
+      "REEFER": 18.65,
+      "HAZMAT": 14.1,
+      "OVERSIZED": 3.95
+    },
+    "ai_rule": {
+      "rule": "empty_first",
+      "margin_hours": 24
+    },
+    "reshuffles_random": 15762.4,
+    "reshuffles_ai": 8657.6,
+    "reshuffles_perfect_knowledge": 4995.2,
+    "reshuffle_reduction_pct": 45.0744,
+    "perfect_knowledge_reduction_pct": 68.3094,
+    "retrievals_without_reshuffle_pct": {
+      "random": 43.783,
+      "ai": 63.536
+    },
+    "type_violations": {
+      "random": 4632.4,
+      "ai": 0.0
+    }
   },
   "data": {
     "containers": 95643,

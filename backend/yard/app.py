@@ -255,12 +255,19 @@ def reshuffling_stats():
         return jsonify({
             'status': 'success',
             'simulation_results': {
-                'random_placement_accuracy': sim['random_placement_accuracy'],
-                'ai_driven_accuracy': sim['ai_driven_accuracy'],
-                'reshuffles_saved': sim['reshuffles_random'] - sim['reshuffles_ai'],
-                'total_containers_simulated': sim['total_containers_simulated']
+                'containers_simulated': sim['containers_simulated'],
+                'runs': sim['runs'],
+                'reshuffles_random': sim['reshuffles_random'],
+                'reshuffles_ai': sim['reshuffles_ai'],
+                'reshuffles_saved': round(sim['reshuffles_random'] - sim['reshuffles_ai']),
+                'reshuffle_reduction_pct': sim['reshuffle_reduction_pct'],
+                'perfect_knowledge_reduction_pct': sim['perfect_knowledge_reduction_pct'],
+                'retrievals_without_reshuffle_pct': sim['retrievals_without_reshuffle_pct'],
+                'type_violations': sim['type_violations']
             },
-            'conclusion': 'AI-driven yard allocation reduces unnecessary reshuffling'
+            'method': 'Stack simulation on real Kaggle arrivals/departures; container types follow the Colombo mix',
+            'conclusion': f"AI-driven placement reduces reshuffles by {sim['reshuffle_reduction_pct']:.1f}% "
+                          f"and removes yard-type violations"
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
