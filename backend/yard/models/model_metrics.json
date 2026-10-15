@@ -115,10 +115,23 @@
       "random": 43.783,
       "ai": 63.536
     },
+    "yard_layout": {
+      "Yard_Block_A": 218,
+      "Yard_Block_B": 218,
+      "Yard_Block_C": 183,
+      "Yard_Block_D": 183,
+      "Yard_Block_E": 25,
+      "Reefer_Yard_01": 229,
+      "Hazardous_Yard_01": 173
+    },
     "type_violations": {
       "random": 4632.4,
       "ai": 0.0
     }
+  },
+  "zone_engine": {
+    "zone_match_pct": 72.4458,
+    "always_fast_access_pct": 72.8405
   },
   "data": {
     "containers": 95643,

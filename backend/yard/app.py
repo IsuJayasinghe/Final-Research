@@ -7,6 +7,8 @@ from datetime import timedelta
 import psycopg2
 import json
 import os
+import time
+from zone_engine import YardState, recommend_zone
 
 app = Flask(__name__)
 CORS(app)
@@ -89,26 +91,13 @@ def get_db_connection():
 
 
 
-# ZONE RECOMMENDATION FUNCTION
+# ZONE RECOMMENDATION ENGINE (shared with the notebook - see zone_engine.py)
+# In-memory yard using the layout and placement rule from the notebook simulation (Cell 9).
+# Yard state is not persisted yet - it resets when the server restarts.
 
-def recommend_zone(dwell_days, container_type):
-    if container_type == 'REEFER':
-        return 'Reefer_Yard_01', 'Temperature controlled storage required'
-    elif container_type == 'HAZMAT':
-        return 'Hazardous_Yard_01', 'Safety regulations - isolated storage'
-    elif container_type == 'OVERSIZED':
-        if dwell_days <= 3:
-            return 'Oversized_Short_Term', 'Oversized container - short stay'
-        else:
-            return 'Oversized_Long_Term', 'Oversized container - extended stay'
-
-    # Standard DRY containers - based on dwell time
-    if dwell_days <= 3:
-        return 'Short-Term Zone', f'Short dwell time ({dwell_days:.1f} days)'
-    elif dwell_days <= 7:
-        return 'Medium-Term Zone', f'Medium dwell time ({dwell_days:.1f} days)'
-    else:
-        return 'Long-Term Zone', f'Long dwell time ({dwell_days:.1f} days)'
+sim_config = model_metrics['reshuffling_simulation']
+yard = YardState(sim_config['yard_layout'], sim_config['tier_height'],
+                 rule=sim_config['ai_rule']['rule'], margin_h=sim_config['ai_rule']['margin_hours'])
 
 
 # ENDPOINT 1: PREDICT DWELL TIME (Prophet + ARIMA)
@@ -171,7 +160,17 @@ def recommend_zone_api():
             _, forecast = prophet_forecast(1)
             dwell_days = max(prophet_config['floor'], forecast['yhat'].iloc[-1])
 
-        zone, reason = recommend_zone(dwell_days, container_type)
+        dwell_days = float(dwell_days)
+        container_type = container_type.upper()
+        rec = recommend_zone(container_type, dwell_days)
+        zone, reason = rec['zone'], rec['reason']
+
+        # Assign a specific slot (capacity-aware: other general blocks only if the zone is full)
+        if container_id in yard.location:
+            yard.retrieve(container_id)            # re-allocation of the same container
+        predicted_departure_h = time.time() / 3600 + dwell_days * 24
+        slot = yard.place(container_id, container_type, dwell_days, predicted_departure_h)
+        block = yard.block_of(container_id) if slot else None
 
         # Save to database
         conn = get_db_connection()
@@ -195,8 +194,13 @@ def recommend_zone_api():
             'container_id': container_id,
             'container_type': container_type,
             'predicted_dwell_days': round(dwell_days, 2),
+            'dwell_class': rec['dwell_class'],
+            'compatibility': rec['compatibility'],
             'recommended_zone': zone,
-            'reason': reason
+            'block': block,
+            'slot': slot,
+            'reason': reason if slot else reason + ' - yard is full, no slot available',
+            'zone_occupancy': yard.zone_occupancy()[zone]
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
