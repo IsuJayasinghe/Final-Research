@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { BarChart3, Bell, Container, FileText, LineChart, Map, Menu, Ship, X } from 'lucide-react'
+import ApiStatus from './ApiStatus'
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: BarChart3, match: (p: string) => p === '/' },
@@ -47,6 +48,7 @@ export default function Header() {
         <nav className="hidden flex-1 justify-center gap-6 md:flex">{links}</nav>
 
         <div className="ml-auto flex items-center gap-3 md:ml-0">
+          <ApiStatus />
           <NavLink to="/alerts" className="rounded-lg p-2 text-muted hover:bg-card hover:text-ink" aria-label="Alerts">
             <Bell size={18} />
           </NavLink>
