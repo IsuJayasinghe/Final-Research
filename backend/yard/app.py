@@ -73,11 +73,13 @@ def forecast_occupancy(planned_arrivals):
 
 # DATABASE CONNECTION
 
+# Local database for now (smart_port_db); set DB_NAME=smart_port_management for the shared one.
+# Tables: common.containers + yard.* (database/schema/01, 02, 05 and 08)
 DB_CONFIG = {
-    'host': 'localhost',
-    'port': 5432,
-    'database': 'smart_port_db',
-    'user': 'postgres',
+    'host': os.environ.get('DB_HOST', 'localhost'),
+    'port': int(os.environ.get('DB_PORT', 5432)),
+    'database': os.environ.get('DB_NAME', 'smart_port_db'),
+    'user': os.environ.get('DB_USER', 'postgres'),
     'password': os.environ.get('DB_PASSWORD', '')
 }
 
@@ -90,14 +92,45 @@ def get_db_connection():
         return None
 
 
+ACTIVE_STATUSES = ('RECOMMENDED', 'ACCEPTED', 'OVERRIDDEN')
+
 
 # ZONE RECOMMENDATION ENGINE (shared with the notebook - see zone_engine.py)
-# In-memory yard using the layout and placement rule from the notebook simulation (Cell 9).
-# Yard state is not persisted yet - it resets when the server restarts.
+# Yard layout comes from yard.yard_zones (falls back to the notebook simulation layout).
+# On startup, active allocations are loaded back into their exact slots.
 
 sim_config = model_metrics['reshuffling_simulation']
-yard = YardState(sim_config['yard_layout'], sim_config['tier_height'],
-                 rule=sim_config['ai_rule']['rule'], margin_h=sim_config['ai_rule']['margin_hours'])
+
+def load_yard():
+    layout = sim_config['yard_layout']
+    saved = []
+    conn = get_db_connection()
+    if conn:
+        try:
+            with conn, conn.cursor() as cur:
+                cur.execute("SELECT yard_zone_id, stack_count FROM yard.yard_zones WHERE stack_count IS NOT NULL")
+                rows = cur.fetchall()
+                if rows:
+                    layout = {zone: stacks for zone, stacks in rows}
+                cur.execute("""SELECT a.container_id, c.container_type, a.yard_zone_id, a.stack_number,
+                                      EXTRACT(EPOCH FROM a.predicted_departure) / 3600
+                               FROM yard.yard_allocations a
+                               JOIN common.containers c ON c.container_id = a.container_id
+                               WHERE a.allocation_status IN %s AND a.stack_number IS NOT NULL
+                               ORDER BY a.stack_number, a.tier""", (ACTIVE_STATUSES,))
+                saved = cur.fetchall()
+        except Exception as db_error:
+            print(f"Could not load yard from database: {db_error}")
+        finally:
+            conn.close()
+    state = YardState(layout, sim_config['tier_height'],
+                      rule=sim_config['ai_rule']['rule'], margin_h=sim_config['ai_rule']['margin_hours'])
+    for container_id, ctype, block, stack_number, dep_h in saved:
+        state.place_exact(container_id, ctype, float(dep_h or 0), block, stack_number)
+    print(f" Yard loaded: {len(state.location)} containers in {len(state.stacks)} stacks")
+    return state
+
+yard = load_yard()
 
 
 # ENDPOINT 1: PREDICT DWELL TIME (Prophet + ARIMA)
@@ -156,9 +189,11 @@ def recommend_zone_api():
         container_id = data.get('container_id', 'UNKNOWN')
 
         # If no dwell_days given, use Prophet to predict
+        model_used = 'Provided dwell time'
         if dwell_days is None:
             _, forecast = prophet_forecast(1)
             dwell_days = max(prophet_config['floor'], forecast['yhat'].iloc[-1])
+            model_used = 'Prophet'
 
         dwell_days = float(dwell_days)
         container_type = container_type.upper()
@@ -172,25 +207,53 @@ def recommend_zone_api():
         slot = yard.place(container_id, container_type, dwell_days, predicted_departure_h)
         block = yard.block_of(container_id) if slot else None
 
-        # Save to database
-        conn = get_db_connection()
+        # Save to database: container in common.containers, allocation in yard.yard_allocations
+        allocation_id = None
+        conn = get_db_connection() if slot else None
         if conn:
             try:
-                cur = conn.cursor()
-                cur.execute(
-                    """INSERT INTO zone_allocations
-                    (container_id, container_type, dwell_days, recommended_zone, reason)
-                    VALUES (%s, %s, %s, %s, %s)""",
-                    (container_id, container_type, dwell_days, zone, reason)
-                )
-                conn.commit()
-                cur.close()
-                conn.close()
+                with conn, conn.cursor() as cur:
+                    cur.execute(
+                        """INSERT INTO common.containers
+                               (container_id, container_size, container_type, shipping_line, weight_category, cargo_type)
+                           VALUES (%s, %s, %s, %s, %s, %s)
+                           ON CONFLICT (container_id) DO UPDATE SET
+                               container_type = EXCLUDED.container_type,
+                               container_size = COALESCE(EXCLUDED.container_size, common.containers.container_size),
+                               shipping_line = COALESCE(EXCLUDED.shipping_line, common.containers.shipping_line),
+                               weight_category = COALESCE(EXCLUDED.weight_category, common.containers.weight_category),
+                               cargo_type = COALESCE(EXCLUDED.cargo_type, common.containers.cargo_type)""",
+                        (container_id, data.get('container_size'), container_type, data.get('shipping_line'),
+                         data.get('weight_category'), data.get('cargo_type')))
+                    # A new recommendation replaces any earlier active one for this container
+                    cur.execute(
+                        """UPDATE yard.yard_allocations SET allocation_status = 'CANCELLED', released_at = NOW()
+                           WHERE container_id = %s AND allocation_status IN %s""",
+                        (container_id, ACTIVE_STATUSES))
+                    _, stack_number, tier = yard.position(container_id)
+                    cur.execute(
+                        """INSERT INTO yard.yard_allocations
+                               (container_id, yard_zone_id, recommended_yard_zone_id, stack_number, tier, slot_id,
+                                predicted_dwell_days, predicted_departure, dwell_class, recommended_zone,
+                                recommendation_reason, model_used, allocation_status)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, NOW() + make_interval(secs => %s), %s, %s, %s, %s, 'RECOMMENDED')
+                           RETURNING yard_allocation_id""",
+                        (container_id, block, block, stack_number, tier, slot, round(dwell_days, 2), dwell_days * 86400,
+                         rec['dwell_class'], zone, reason, model_used))
+                    allocation_id = cur.fetchone()[0]
+                    cur.execute(
+                        """UPDATE yard.yard_zones z SET current_occupancy =
+                               (SELECT COUNT(*) FROM yard.yard_allocations a
+                                WHERE a.yard_zone_id = z.yard_zone_id AND a.allocation_status IN %s)""",
+                        (ACTIVE_STATUSES,))
             except Exception as db_error:
                 print(f"DB save error: {db_error}")
+            finally:
+                conn.close()
 
         return jsonify({
             'status': 'success',
+            'allocation_id': allocation_id,
             'container_id': container_id,
             'container_type': container_type,
             'predicted_dwell_days': round(dwell_days, 2),

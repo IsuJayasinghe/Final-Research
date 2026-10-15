@@ -143,6 +143,22 @@ class YardState:
         self.location[container_id] = i
         return self.slot_id(i, len(self.stacks[i]))
 
+    def place_exact(self, container_id, container_type, pred_dep_h, block, stack_number):
+        """Restore a saved allocation into its exact stack (used when loading from the database)."""
+        i = self.block_stacks[block][stack_number - 1]
+        if len(self.stacks[i]) >= self.tier_height:
+            return None
+        self.predicted_departure_h[container_id] = pred_dep_h
+        self.container_type[container_id] = (container_type or 'DRY').upper()
+        self.stacks[i].append(container_id)
+        self.location[container_id] = i
+        return self.slot_id(i, len(self.stacks[i]))
+
+    def position(self, container_id):
+        """(block, stack_number, tier) of a container in the yard."""
+        i = self.location[container_id]
+        return self.stack_block[i], self.stack_number[i], self.stacks[i].index(container_id) + 1
+
     def retrieve(self, container_id):
         """Remove a container. Returns the containers that were on top of it (to be relocated)."""
         stack = self.stacks[self.location.pop(container_id)]
