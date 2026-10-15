@@ -16,7 +16,8 @@ export default function OccupancyTrend({ points, height = 240 }: { points: Occup
         </defs>
         <CartesianGrid stroke={colors.line} strokeDasharray="3 3" vertical={false} />
         <XAxis dataKey="day" stroke={colors.muted} fontSize={11} tickLine={false} />
-        <YAxis stroke={colors.muted} fontSize={11} tickLine={false} unit="%" domain={[0, 100]} />
+        <YAxis stroke={colors.muted} fontSize={11} tickLine={false} unit="%"
+               domain={[0, (max: number) => Math.max(100, Math.ceil(max / 20) * 20)]} />
         <Tooltip
           contentStyle={{ background: '#111c30', border: `1px solid ${colors.line}`, borderRadius: 8, fontSize: 12 }}
           formatter={(value: number, name) => (name === 'utilization' ? [`${value}%`, 'Predicted occupancy'] : [value, name])}
