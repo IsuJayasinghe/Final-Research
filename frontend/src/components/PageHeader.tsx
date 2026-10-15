@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 
 interface Props {
   title: string
@@ -7,6 +7,10 @@ interface Props {
 }
 
 export default function PageHeader({ title, subtitle, actions }: Props) {
+  useEffect(() => {
+    document.title = `${title} · SmartYard`
+  }, [title])
+
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div>

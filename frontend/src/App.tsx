@@ -1,14 +1,17 @@
+import { lazy } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import Layout from './components/layout/Layout'
-import AlertsPage from './pages/AlertsPage'
-import ContainerEntryPage from './pages/ContainerEntryPage'
-import ContainerTrackingPage from './pages/ContainerTrackingPage'
-import DashboardPage from './pages/DashboardPage'
-import DwellPredictionPage from './pages/DwellPredictionPage'
-import NotFoundPage from './pages/NotFoundPage'
-import OccupancyForecastPage from './pages/OccupancyForecastPage'
-import ReportsPage from './pages/ReportsPage'
-import YardMapPage from './pages/YardMapPage'
+
+// Pages load on demand so the first screen opens quickly (charts are only loaded where used)
+const DashboardPage = lazy(() => import('./pages/DashboardPage'))
+const ContainerTrackingPage = lazy(() => import('./pages/ContainerTrackingPage'))
+const ContainerEntryPage = lazy(() => import('./pages/ContainerEntryPage'))
+const DwellPredictionPage = lazy(() => import('./pages/DwellPredictionPage'))
+const OccupancyForecastPage = lazy(() => import('./pages/OccupancyForecastPage'))
+const YardMapPage = lazy(() => import('./pages/YardMapPage'))
+const ReportsPage = lazy(() => import('./pages/ReportsPage'))
+const AlertsPage = lazy(() => import('./pages/AlertsPage'))
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
 
 export default function App() {
   return (

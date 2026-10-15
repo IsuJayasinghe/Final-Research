@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { BarChart3, Bell, Container, FileText, LineChart, Map, Menu, Ship, X } from 'lucide-react'
+import { BarChart3, Container, FileText, LineChart, Map, Menu, Ship, X } from 'lucide-react'
+import AlertBell from './AlertBell'
 import ApiStatus from './ApiStatus'
 
 const NAV = [
@@ -49,9 +50,7 @@ export default function Header() {
 
         <div className="ml-auto flex items-center gap-3 md:ml-0">
           <ApiStatus />
-          <NavLink to="/alerts" className="rounded-lg p-2 text-muted hover:bg-card hover:text-ink" aria-label="Alerts">
-            <Bell size={18} />
-          </NavLink>
+          <AlertBell />
           <span className="hidden rounded-full border border-line px-3 py-1 text-xs sm:inline">Yard Manager</span>
           <button className="rounded-lg p-2 text-muted hover:bg-card md:hidden" onClick={() => setOpen(!open)} aria-label="Menu">
             {open ? <X size={20} /> : <Menu size={20} />}
