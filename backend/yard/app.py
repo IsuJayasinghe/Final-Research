@@ -66,7 +66,7 @@ def accept_allocation(allocation_id):
 @app.route('/api/allocations/<int:allocation_id>/override', methods=['POST'])
 def override_allocation(allocation_id):
     data = body()
-    return ok(**yard_service.override(allocation_id, data.get('block') or data.get('zone'), data.get('reason')))
+    return ok(**yard_service.override(allocation_id, data.get('zone') or data.get('section'), data.get('reason')))
 
 
 # CONTAINER DEPARTURE

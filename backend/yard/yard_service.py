@@ -1,7 +1,8 @@
-"""Yard operations: allocation, accept/override, departure, search and summaries.
+"""Yard operations for Yard Block 01: allocation, accept/override, departure, search and summaries.
 
 The in-memory YardState (zone_engine.py) decides slots; every change is written to
-common.containers / yard.yard_allocations so the yard can be rebuilt after a restart.
+common.containers / yard.yard_allocations so the block can be rebuilt after a restart.
+Each zone of the block is one row of yard.yard_zones (a "section" with a range of bays).
 """
 import threading
 import time
@@ -9,7 +10,7 @@ from datetime import datetime
 
 from db import ACTIVE_STATUSES, get_db_connection
 from predictors import model_metrics
-from zone_engine import BLOCK_ZONE, ZONES, YardState, recommend_zone
+from zone_engine import BLOCK_NAME, ROWS_PER_BAY, SECTION_ZONE, ZONES, YardState, recommend_zone
 
 sim_config = model_metrics['reshuffling_simulation']
 yard_lock = threading.Lock()                      # one change to the yard at a time
@@ -25,17 +26,19 @@ class YardError(Exception):
 
 
 def load_yard():
-    """Build the yard from yard.yard_zones and put active allocations back in their slots."""
-    layout = sim_config['yard_layout']
+    """Build Yard Block 01 from yard.yard_zones and put active allocations back in their slots."""
+    layout = model_metrics['block']['layout']
     saved = []
     conn = get_db_connection()
     if conn:
         try:
             with conn, conn.cursor() as cur:
-                cur.execute("SELECT yard_zone_id, stack_count FROM yard.yard_zones WHERE stack_count IS NOT NULL")
+                cur.execute("""SELECT yard_zone_id, first_bay, bay_count, rows_per_bay FROM yard.yard_zones
+                               WHERE first_bay IS NOT NULL ORDER BY first_bay""")
                 rows = cur.fetchall()
                 if rows:
-                    layout = {zone: stacks for zone, stacks in rows}
+                    layout = {section: {'first_bay': first, 'bays': bays, 'rows': rows_ or ROWS_PER_BAY}
+                              for section, first, bays, rows_ in rows}
                 cur.execute("""SELECT a.container_id, c.container_type, a.yard_zone_id, a.stack_number,
                                       EXTRACT(EPOCH FROM a.predicted_departure) / 3600
                                FROM yard.yard_allocations a
@@ -49,9 +52,11 @@ def load_yard():
             conn.close()
     state = YardState(layout, sim_config['tier_height'],
                       rule=sim_config['ai_rule']['rule'], margin_h=sim_config['ai_rule']['margin_hours'])
-    for container_id, ctype, block, stack_number, dep_h in saved:
-        state.place_exact(container_id, ctype, float(dep_h or 0), block, stack_number)
-    print(f" Yard loaded: {len(state.location)} containers in {len(state.stacks)} stacks")
+    for container_id, ctype, section, stack_number, dep_h in saved:
+        if section in state.section_stacks:
+            state.place_exact(container_id, ctype, float(dep_h or 0), section, stack_number)
+    print(f" {BLOCK_NAME} loaded: {len(state.location)} containers in {len(state.stacks)} stacks "
+          f"({state.bay_count} bays)")
     return state
 
 
@@ -73,12 +78,12 @@ def _update_zone_occupancy(cur):
 
 
 def _save_position(cur, container_id):
-    """Write a container's current block / stack / tier / slot to its active allocation."""
-    block, stack_number, tier = yard.position(container_id)
+    """Write a container's current section / stack / tier / slot to its active allocation."""
+    section, stack_number, tier = yard.position(container_id)
     slot = yard.slot_id(yard.location[container_id], tier)
     cur.execute("""UPDATE yard.yard_allocations SET yard_zone_id = %s, stack_number = %s, tier = %s, slot_id = %s
                    WHERE container_id = %s AND allocation_status IN %s""",
-                (block, stack_number, tier, slot, container_id, ACTIVE_STATUSES))
+                (section, stack_number, tier, slot, container_id, ACTIVE_STATUSES))
     return slot
 
 
@@ -132,7 +137,7 @@ def allocate(container, dwell_days, model_used):
                 slot = yard.place(container_id, container_type, dwell_days, predicted_departure_h)
                 if slot is None:
                     raise YardError('Yard is full - no slot available', 409)
-                block, stack_number, tier = yard.position(container_id)
+                section, stack_number, tier = yard.position(container_id)
                 cur.execute(
                     """INSERT INTO yard.yard_allocations
                            (container_id, yard_zone_id, recommended_yard_zone_id, stack_number, tier, slot_id,
@@ -140,7 +145,7 @@ def allocate(container, dwell_days, model_used):
                             recommendation_reason, model_used, allocation_status)
                        VALUES (%s, %s, %s, %s, %s, %s, %s, NOW() + make_interval(secs => %s), %s, %s, %s, %s, 'RECOMMENDED')
                        RETURNING yard_allocation_id""",
-                    (container_id, block, block, stack_number, tier, slot, round(dwell_days, 2), dwell_days * 86400,
+                    (container_id, section, section, stack_number, tier, slot, round(dwell_days, 2), dwell_days * 86400,
                      rec['dwell_class'], rec['zone'], rec['reason'], model_used))
                 allocation_id = cur.fetchone()[0]
                 cur.execute("""INSERT INTO yard.dwell_predictions (container_id, prediction_date, predicted_dwell_days, model_name)
@@ -157,7 +162,8 @@ def allocate(container, dwell_days, model_used):
     return {'allocation_id': allocation_id, 'container_id': container_id, 'container_type': container_type,
             'predicted_dwell_days': round(dwell_days, 2), 'model_used': model_used,
             'dwell_class': rec['dwell_class'], 'compatibility': rec['compatibility'],
-            'recommended_zone': rec['zone'], 'block': block, 'slot': slot, 'reason': rec['reason'],
+            'recommended_zone': rec['zone'], 'block': BLOCK_NAME, 'section': section, 'slot': slot,
+            'reason': rec['reason'],
             'allocation_status': 'RECOMMENDED', 'relocated': relocated,
             'zone_occupancy': yard.zone_occupancy()[rec['zone']]}
 
@@ -182,20 +188,18 @@ def accept(allocation_id):
                 container_id = _get_active_allocation(cur, allocation_id)
                 cur.execute("""UPDATE yard.yard_allocations SET allocation_status = 'ACCEPTED', decided_at = NOW()
                                WHERE yard_allocation_id = %s RETURNING slot_id, yard_zone_id""", (allocation_id,))
-                slot, block = cur.fetchone()
+                slot, section = cur.fetchone()
         finally:
             conn.close()
     return {'allocation_id': allocation_id, 'container_id': container_id, 'allocation_status': 'ACCEPTED',
-            'block': block, 'slot': slot}
+            'zone': SECTION_ZONE.get(section), 'section': section, 'slot': slot}
 
 
 def override(allocation_id, target, reason):
-    """FR07: yard manager moves the container to another block or zone instead."""
-    block = target if target in BLOCK_ZONE else None
-    if block is None and target in ZONES:
-        block = ZONES[target]['blocks'][0]
-    if block is None:
-        raise YardError(f"Unknown block or zone '{target}'. Use one of: {', '.join(list(ZONES) + list(BLOCK_ZONE))}")
+    """FR07: yard manager moves the container to another zone of the block instead."""
+    section = target if target in SECTION_ZONE else (ZONES[target]['section'] if target in ZONES else None)
+    if section is None:
+        raise YardError(f"Unknown zone '{target}'. Use one of: {', '.join(ZONES)}")
     if not reason:
         raise YardError('An override reason is required')
 
@@ -209,19 +213,14 @@ def override(allocation_id, target, reason):
                 ctype = yard.container_type[container_id]
                 dep_h = yard.predicted_departure_h[container_id]
                 above = yard.retrieve(container_id)
-                slot = yard.place_at(container_id, ctype, dep_h, block)
-                if slot is None and target in ZONES:   # first block full - try the zone's other blocks
-                    for other in ZONES[target]['blocks'][1:]:
-                        slot = yard.place_at(container_id, ctype, dep_h, other)
-                        if slot:
-                            break
+                slot = yard.place_at(container_id, ctype, dep_h, section)
                 if slot is None:
                     raise YardError(f'{target} is full', 409)
-                block, stack_number, tier = yard.position(container_id)
+                section, stack_number, tier = yard.position(container_id)
                 cur.execute("""UPDATE yard.yard_allocations SET allocation_status = 'OVERRIDDEN', decided_at = NOW(),
                                       override_reason = %s, yard_zone_id = %s, stack_number = %s, tier = %s, slot_id = %s
                                WHERE yard_allocation_id = %s""",
-                            (reason, block, stack_number, tier, slot, allocation_id))
+                            (reason, section, stack_number, tier, slot, allocation_id))
                 relocated = _relocate(cur, above)
                 _update_zone_occupancy(cur)
         except Exception:
@@ -230,7 +229,7 @@ def override(allocation_id, target, reason):
         finally:
             conn.close()
     return {'allocation_id': allocation_id, 'container_id': container_id, 'allocation_status': 'OVERRIDDEN',
-            'zone': BLOCK_ZONE[block], 'block': block, 'slot': slot, 'override_reason': reason,
+            'zone': SECTION_ZONE[section], 'section': section, 'slot': slot, 'override_reason': reason,
             'relocated': relocated, 'reshuffles': len(relocated)}
 
 
@@ -274,13 +273,13 @@ CONTAINER_COLUMNS = """a.yard_allocation_id, a.container_id, c.container_type, c
 
 
 def _container_row(row):
-    (allocation_id, cid, ctype, size, cargo, line, rec_zone, block, slot, dwell, dwell_class,
+    (allocation_id, cid, ctype, size, cargo, line, rec_zone, section, slot, dwell, dwell_class,
      allocated_at, predicted_departure, released_at, status, override_reason, reason, model_used) = row
     active = status in ACTIVE_STATUSES
     overstaying = bool(active and predicted_departure and predicted_departure < datetime.now())
     return {'allocation_id': allocation_id, 'container_id': cid, 'container_type': ctype, 'container_size': size,
             'cargo_type': cargo, 'shipping_line': line, 'recommended_zone': rec_zone,
-            'zone': BLOCK_ZONE.get(block), 'block': block, 'slot': slot,
+            'zone': SECTION_ZONE.get(section), 'section': section, 'slot': slot,
             'predicted_dwell_days': float(dwell) if dwell is not None else None, 'dwell_class': dwell_class,
             'arrival': allocated_at.isoformat() if allocated_at else None,
             'predicted_departure': predicted_departure.isoformat() if predicted_departure else None,
@@ -299,9 +298,8 @@ def search_containers(search=None, container_type=None, zone=None, status=None, 
         where.append('UPPER(c.container_type) = %s')
         params.append(container_type.upper())
     if zone:
-        blocks = ZONES[zone]['blocks'] if zone in ZONES else [zone]
-        where.append('a.yard_zone_id IN %s')
-        params.append(tuple(blocks))
+        where.append('a.yard_zone_id = %s')
+        params.append(ZONES[zone]['section'] if zone in ZONES else zone)
     status = (status or '').lower()
     if status == 'active':
         where.append('a.allocation_status IN %s')
@@ -350,21 +348,26 @@ def get_container(container_id):
 
 
 def yard_zones():
-    """Yard Map: occupancy per zone and block, with the height of every stack."""
+    """Yard Map: Yard Block 01 with occupancy per zone and the height of every stack (bay x row)."""
     zones = yard.zone_occupancy()
-    blocks = []
-    for block, idx in yard.block_stacks.items():
-        heights = [len(yard.stacks[i]) for i in idx]
+    sections = []
+    for section, idx in yard.section_stacks.items():
+        spec = yard.layout[section]
+        heights = [len(yard.stacks[i]) for i in idx]          # bay by bay, rows 1..n within a bay
         capacity = len(idx) * yard.tier_height
         used = sum(heights)
-        blocks.append({'block': block, 'zone': BLOCK_ZONE.get(block), 'stacks': len(idx),
-                       'tier_height': yard.tier_height, 'capacity': capacity, 'used': used,
-                       'utilization_pct': round(used / capacity * 100, 1) if capacity else 0.0,
-                       'stack_heights': heights})
+        sections.append({'section': section, 'zone': SECTION_ZONE.get(section), 'first_bay': spec['first_bay'],
+                         'bays': spec['bays'], 'rows': spec['rows'], 'tier_height': yard.tier_height,
+                         'capacity': capacity, 'used': used,
+                         'utilization_pct': round(used / capacity * 100, 1) if capacity else 0.0,
+                         'stack_heights': heights})
     total_capacity = sum(z['capacity'] for z in zones.values())
     total_used = sum(z['used'] for z in zones.values())
-    return {'zones': [{'zone': name, 'description': ZONES[name]['description'], **info} for name, info in zones.items()],
-            'blocks': blocks,
+    return {'block': {'name': BLOCK_NAME, 'bays': yard.bay_count, 'rows': max(sp['rows'] for sp in yard.layout.values()),
+                      'tier_height': yard.tier_height, 'stacks': len(yard.stacks)},
+            'zones': [{'zone': name, 'section': ZONES[name]['section'], 'description': ZONES[name]['description'], **info}
+                      for name, info in zones.items()],
+            'sections': sections,
             'total': {'used': total_used, 'capacity': total_capacity,
                       'utilization_pct': round(total_used / total_capacity * 100, 1) if total_capacity else 0.0}}
 

@@ -1,12 +1,12 @@
-"""Load demo containers into the local yard database (for the dashboard demo).
+"""Load demo containers into Yard Block 01 in the local database (for the dashboard demo).
 
 Uses real containers from the Colombo Port data (ID, type, size, shipping line, cargo).
 Each container arrives at a time in the last few days, gets its dwell time from the
 per-container model and is allocated by the zone engine - exactly like a real arrival.
 Most recommendations are accepted, a few overridden, and containers leave in time order
-when their (actual) stay is over - so the yard ends up about half full, with real reshuffles.
+when their (actual) stay is over - so the block ends up about half full, with real reshuffles.
 
-Run from backend/yard (stop the API first, start it again afterwards). Takes about a minute:
+Run from backend/yard (stop the API first, start it again afterwards). Takes under a minute:
     python scripts/load_demo_data.py --reset
 
 --reset removes ALL containers and allocations from the yard tables first.
@@ -52,7 +52,7 @@ class SharedConnection:
 _shared = SharedConnection(get_db_connection())
 yard_service.get_db_connection = lambda: _shared
 get_db_connection = yard_service.get_db_connection  # noqa: F811
-OVERRIDE_REASONS = ['Customs inspection expected', 'Shipping line requested a different block',
+OVERRIDE_REASONS = ['Customs inspection expected', 'Shipping line requested a different zone',
                     'Block under maintenance', 'Container held for documentation']
 
 
@@ -84,7 +84,7 @@ def backdate(container_id, arrival, dwell_days, released_at=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--count', type=int, default=5000, help='number of containers to load')
+    parser.add_argument('--count', type=int, default=1250, help='number of containers to load')
     parser.add_argument('--days', type=int, default=7, help='spread arrivals over the last N days')
     parser.add_argument('--reset', action='store_true', help='clear the yard tables first')
     parser.add_argument('--seed', type=int, default=42)

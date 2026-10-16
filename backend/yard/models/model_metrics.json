@@ -71,8 +71,8 @@
     ],
     "next_day": {
       "r2": 0.8618,
-      "rmse": 245.0109,
-      "mae": 193.1945,
+      "rmse": 61.2527,
+      "mae": 48.2986,
       "mape": 7.294
     },
     "horizon_mape": {
@@ -93,7 +93,8 @@
     }
   },
   "reshuffling_simulation": {
-    "containers_simulated": 17051,
+    "containers_simulated": 4237,
+    "test_containers": 17051,
     "runs": 5,
     "tier_height": 4,
     "container_type_mix": {
@@ -104,34 +105,85 @@
     },
     "ai_rule": {
       "rule": "empty_first",
-      "margin_hours": 24
+      "margin_hours": 36
     },
-    "reshuffles_random": 15762.4,
-    "reshuffles_ai": 8657.6,
-    "reshuffles_perfect_knowledge": 4995.2,
-    "reshuffle_reduction_pct": 45.0744,
-    "perfect_knowledge_reduction_pct": 68.3094,
+    "reshuffles_random": 3831.6,
+    "reshuffles_ai": 2085.4,
+    "reshuffles_perfect_knowledge": 1470.8,
+    "reshuffle_reduction_pct": 45.5737,
+    "perfect_knowledge_reduction_pct": 61.6139,
     "retrievals_without_reshuffle_pct": {
-      "random": 43.783,
-      "ai": 63.536
+      "random": 44.346,
+      "ai": 63.1
     },
     "yard_layout": {
-      "Yard_Block_A": 218,
-      "Yard_Block_B": 218,
-      "Yard_Block_C": 183,
-      "Yard_Block_D": 183,
-      "Yard_Block_E": 25,
-      "Reefer_Yard_01": 229,
-      "Hazardous_Yard_01": 173
+      "YB01_FAST": {
+        "first_bay": 1,
+        "bays": 19,
+        "rows": 6
+      },
+      "YB01_MEDIUM": {
+        "first_bay": 20,
+        "bays": 16,
+        "rows": 6
+      },
+      "YB01_LONG": {
+        "first_bay": 36,
+        "bays": 1,
+        "rows": 6
+      },
+      "YB01_REEFER": {
+        "first_bay": 37,
+        "bays": 10,
+        "rows": 6
+      },
+      "YB01_HAZARD": {
+        "first_bay": 49,
+        "bays": 8,
+        "rows": 6
+      }
     },
     "type_violations": {
-      "random": 4632.4,
+      "random": 1166.4,
       "ai": 0.0
     }
   },
   "zone_engine": {
     "zone_match_pct": 72.4458,
     "always_fast_access_pct": 72.8405
+  },
+  "block": {
+    "name": "Yard Block 01",
+    "share_of_terminal": 0.25,
+    "rows_per_bay": 6,
+    "tier_height": 4,
+    "layout": {
+      "YB01_FAST": {
+        "first_bay": 1,
+        "bays": 19,
+        "rows": 6
+      },
+      "YB01_MEDIUM": {
+        "first_bay": 20,
+        "bays": 16,
+        "rows": 6
+      },
+      "YB01_LONG": {
+        "first_bay": 36,
+        "bays": 1,
+        "rows": 6
+      },
+      "YB01_REEFER": {
+        "first_bay": 37,
+        "bays": 10,
+        "rows": 6
+      },
+      "YB01_HAZARD": {
+        "first_bay": 49,
+        "bays": 8,
+        "rows": 6
+      }
+    }
   },
   "data": {
     "containers": 95643,

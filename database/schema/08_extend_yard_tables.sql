@@ -2,12 +2,18 @@
 -- 08_extend_yard_tables.sql
 -- AI-Powered Autonomous Smart Port Management System
 -- Component 3: Smart Container Yard Allocation & Space Utilization Optimization System
--- Extends the yard tables from 05_create_yard_tables.sql for slot-level allocation,
--- accept/override decisions and model outputs. Run after 01, 02 and 05.
+-- Extends the yard tables from 05_create_yard_tables.sql for one yard block (Yard Block 01):
+-- zone bay ranges, slot-level allocation, accept/override decisions and model outputs.
+-- Run after 01, 02 and 05.
 -- ==============================================================================
 
--- Yard blocks: access zone, stack layout and description
+-- The component manages ONE yard block (Yard Block 01). Each row of yard.yard_zones is one
+-- zone of that block: a range of bays, every bay has rows_per_bay stacks of tier_height tiers.
+ALTER TABLE yard.yard_zones ADD COLUMN IF NOT EXISTS block_name VARCHAR(50);
 ALTER TABLE yard.yard_zones ADD COLUMN IF NOT EXISTS access_zone VARCHAR(30);
+ALTER TABLE yard.yard_zones ADD COLUMN IF NOT EXISTS first_bay INTEGER;
+ALTER TABLE yard.yard_zones ADD COLUMN IF NOT EXISTS bay_count INTEGER;
+ALTER TABLE yard.yard_zones ADD COLUMN IF NOT EXISTS rows_per_bay INTEGER DEFAULT 6;
 ALTER TABLE yard.yard_zones ADD COLUMN IF NOT EXISTS stack_count INTEGER;
 ALTER TABLE yard.yard_zones ADD COLUMN IF NOT EXISTS tier_height INTEGER DEFAULT 4;
 ALTER TABLE yard.yard_zones ADD COLUMN IF NOT EXISTS description VARCHAR(200);
@@ -52,21 +58,33 @@ CREATE TABLE IF NOT EXISTS yard.occupancy_forecasts (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Colombo yard blocks. Stack counts come from the yard layout used in the stacking
--- simulation (notebook Cell 9); capacity = stacks x 4 tiers.
-INSERT INTO yard.yard_zones (yard_zone_id, zone_name, access_zone, stack_count, tier_height, capacity, description)
+-- Zones of Yard Block 01, in bay order from the gate end (bays 47-48 are an empty buffer
+-- before the hazardous bays). Bay ranges come from the yard layout used in the stacking
+-- simulation (notebook Cell 9); stacks = bays x 6 rows, capacity = stacks x 4 tiers.
+INSERT INTO yard.yard_zones (yard_zone_id, zone_name, block_name, access_zone, first_bay, bay_count,
+                             rows_per_bay, stack_count, tier_height, capacity, description)
 VALUES
-    ('Yard_Block_A',      'Yard Block A',          'Fast-Access',   218, 4, 872, 'Near the gate, for short-stay containers'),
-    ('Yard_Block_B',      'Yard Block B',          'Fast-Access',   218, 4, 872, 'Near the gate, for short-stay containers'),
-    ('Yard_Block_C',      'Yard Block C',          'Medium-Access', 183, 4, 732, 'Middle of the yard, for medium-stay containers'),
-    ('Yard_Block_D',      'Yard Block D',          'Medium-Access', 183, 4, 732, 'Middle of the yard, for medium-stay containers'),
-    ('Yard_Block_E',      'Yard Block E',          'Long-Term',      25, 4, 100, 'Back of the yard, for long-stay containers'),
-    ('Reefer_Yard_01',    'Reefer Yard 01',        'Reefer',        229, 4, 916, 'Powered slots for refrigerated containers'),
-    ('Hazardous_Yard_01', 'Hazardous Yard 01',     'Hazardous',     173, 4, 692, 'Isolated storage for dangerous cargo')
+    ('YB01_FAST',   'Fast-Access zone',   'Yard Block 01', 'Fast-Access',    1, 19, 6, 114, 4, 456, 'Bays nearest the gate, for short-stay containers'),
+    ('YB01_MEDIUM', 'Medium-Access zone', 'Yard Block 01', 'Medium-Access', 20, 16, 6,  96, 4, 384, 'Middle bays, for medium-stay containers'),
+    ('YB01_LONG',   'Long-Term zone',     'Yard Block 01', 'Long-Term',     36,  1, 6,   6, 4,  24, 'Far bays, for long-stay containers'),
+    ('YB01_REEFER', 'Reefer zone',        'Yard Block 01', 'Reefer',        37, 10, 6,  60, 4, 240, 'Powered bays for refrigerated containers'),
+    ('YB01_HAZARD', 'Hazardous zone',     'Yard Block 01', 'Hazardous',     49,  8, 6,  48, 4, 192, 'Isolated bays for dangerous cargo, behind a buffer')
 ON CONFLICT (yard_zone_id) DO UPDATE SET
     zone_name = EXCLUDED.zone_name,
+    block_name = EXCLUDED.block_name,
     access_zone = EXCLUDED.access_zone,
+    first_bay = EXCLUDED.first_bay,
+    bay_count = EXCLUDED.bay_count,
+    rows_per_bay = EXCLUDED.rows_per_bay,
     stack_count = EXCLUDED.stack_count,
     tier_height = EXCLUDED.tier_height,
     capacity = EXCLUDED.capacity,
     description = EXCLUDED.description;
+
+-- Earlier versions of this file seeded seven separate blocks; remove them if nothing uses them
+DELETE FROM yard.yard_zones z
+WHERE z.yard_zone_id IN ('Yard_Block_A', 'Yard_Block_B', 'Yard_Block_C', 'Yard_Block_D', 'Yard_Block_E',
+                         'Reefer_Yard_01', 'Hazardous_Yard_01')
+  AND NOT EXISTS (SELECT 1 FROM yard.yard_allocations a
+                  WHERE a.yard_zone_id = z.yard_zone_id OR a.recommended_yard_zone_id = z.yard_zone_id)
+  AND NOT EXISTS (SELECT 1 FROM yard.yard_occupancy o WHERE o.yard_zone_id = z.yard_zone_id);

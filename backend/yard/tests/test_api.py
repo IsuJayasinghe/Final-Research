@@ -83,8 +83,9 @@ def test_override(client):
     url = f"/api/allocations/{data['allocation_id']}/override"
     assert client.post(url, json={'zone': 'Long-Term'}).status_code == 400          # reason required
     assert client.post(url, json={'zone': 'Nowhere', 'reason': 'x'}).status_code == 400
-    moved = client.post(url, json={'zone': 'Long-Term', 'reason': 'Customs hold expected'}).get_json()
-    assert moved['allocation_status'] == 'OVERRIDDEN' and moved['block'] == 'Yard_Block_E'
+    moved = client.post(url, json={'zone': 'Medium-Access', 'reason': 'Customs hold expected'}).get_json()
+    assert moved['allocation_status'] == 'OVERRIDDEN' and moved['section'] == 'YB01_MEDIUM'
+    assert moved['slot'].startswith('B01-')
 
 
 def test_reallocation_cancels_previous(client):
@@ -108,8 +109,8 @@ def test_search_and_filters(client):
     assert data['total'] == 1 and data['containers'][0]['container_id'] == 'ZZTEST00002'
     released = client.get('/api/containers?search=ZZTEST&status=released').get_json()
     assert {c['container_id'] for c in released['containers']} == {'ZZTEST00013'}
-    long_term = client.get('/api/containers?search=ZZTEST&zone=Long-Term').get_json()
-    assert {c['container_id'] for c in long_term['containers']} == {'ZZTEST00005', 'ZZTEST00011'}
+    reefer = client.get('/api/containers?search=ZZTEST&zone=Reefer').get_json()
+    assert {c['container_id'] for c in reefer['containers']} == {'ZZTEST00002'}
 
 
 def test_container_not_found(client):
@@ -125,8 +126,9 @@ def test_yard_reloads_after_restart(client):
 
 def test_yard_zones_and_dashboard(client):
     zones = client.get('/api/yard/zones').get_json()
-    assert len(zones['zones']) == 5 and len(zones['blocks']) == 7
-    assert zones['total']['capacity'] == 4916
+    assert zones['block']['name'] == 'Yard Block 01'
+    assert len(zones['zones']) == 5 and len(zones['sections']) == 5        # one block, five zones
+    assert zones['total']['capacity'] == zones['block']['stacks'] * zones['block']['tier_height']
     summary = client.get('/api/dashboard/summary').get_json()
     for key in ['total_containers', 'yard_occupancy_pct', 'overstaying', 'zone_occupancy', 'recent_allocations']:
         assert key in summary
@@ -135,7 +137,7 @@ def test_yard_zones_and_dashboard(client):
 def test_forecasts_and_alerts(client):
     dwell = client.get('/api/predict-dwell?days=7').get_json()
     assert len(dwell['prophet_predictions']) == 7 and dwell['model_comparison']['recommended'] == 'Prophet'
-    occupancy = client.get('/api/occupancy?days=5&capacity=3500').get_json()
+    occupancy = client.get('/api/occupancy?days=5&capacity=800').get_json()
     assert len(occupancy['predictions']) == 5 and occupancy['alerts']               # small capacity -> alert
     assert 'alerts' in client.get('/api/alerts').get_json()
 

@@ -1,8 +1,9 @@
 # Component 3 – Smart Container Yard Allocation API
 
 Flask API for dwell-time prediction, yard occupancy forecasting, zone recommendation and
-slot allocation. The trained models in `models/` are produced by
-`ml-models/YardAllocation.ipynb` (Cell 12).
+slot allocation for **one yard block (Yard Block 01)**: 56 bays × 6 rows × 4 tiers, with the
+Fast-Access, Medium-Access, Long-Term, Reefer and Hazardous zones as bay ranges of the block.
+The trained models in `models/` are produced by `ml-models/YardAllocation.ipynb` (Cell 12).
 
 ## Files
 
@@ -36,7 +37,7 @@ The API runs on http://localhost:5001 – open http://localhost:5001/api/health 
 
 ## Demo data (optional)
 
-Loads 5,000 real-mix Colombo containers over the last 7 days (about one minute).
+Loads 1,250 real-mix Colombo containers into Yard Block 01 over the last 7 days (under a minute).
 **`--reset` deletes all containers and allocations in the yard tables first.**
 Stop the API, run the loader, then start the API again:
 ```
@@ -59,7 +60,7 @@ python -m pytest tests -q
 | POST | `/api/containers/<id>/depart` | Container leaves; containers on top are relocated |
 | GET | `/api/containers` | Search and filter (`search`, `type`, `zone`, `status`) (FR09) |
 | GET | `/api/containers/<id>` | One container's slot and status |
-| GET | `/api/yard/zones` | Zone, block and stack occupancy |
+| GET | `/api/yard/zones` | Yard Block 01: zone occupancy and every stack (bay × row) |
 | GET | `/api/dashboard/summary` | Dashboard figures |
 | GET | `/api/predict-dwell` | Prophet and ARIMA forecasts |
 | GET | `/api/occupancy` | XGBoost occupancy forecast with 85% alerts (FR03, FR08) |
