@@ -85,7 +85,8 @@ export default function RecommendationPanel({ result, onNew }: Props) {
       <div className="card">
         <div className="flex items-center gap-2 text-sm font-semibold"><MapPin size={16} className="text-accent" /> RECOMMENDED ALLOCATION</div>
         <p className={`mt-3 text-2xl font-bold ${style.text}`}>{result.recommended_zone}</p>
-        <p className="mt-1 font-mono text-sm">{result.block.replace(/_/g, ' ')} · slot {result.slot}</p>
+        <p className="mt-1 text-sm">{result.block} · slot <span className="font-mono">{result.slot}</span></p>
+        <p className="text-[11px] text-muted">Slot = block-bay-row-tier</p>
         <p className="mt-3 flex gap-2 text-xs text-muted"><Info size={14} className="mt-0.5 shrink-0" />{result.reason}</p>
         <div className="mt-4">
           <div className="mb-1 flex justify-between text-[11px] text-muted">
@@ -153,7 +154,7 @@ export default function RecommendationPanel({ result, onNew }: Props) {
             )}
             <div className="mt-3 flex flex-wrap gap-2">
               <button className="btn-primary py-1.5" onClick={onNew}><Plus size={14} /> Register another</button>
-              <Link to={`/containers?search=${result.container_id}`} className="btn-ghost py-1.5">View in tracking</Link>
+              <Link to={`/containers?search=${result.container_id}&status=all`} className="btn-ghost py-1.5">View in tracking</Link>
             </div>
           </div>
         )}

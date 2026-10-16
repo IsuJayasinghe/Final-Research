@@ -67,7 +67,7 @@ export default function ContainerTrackingPage() {
       }
       downloadCsv(`containers-${new Date().toISOString().slice(0, 10)}.csv`, rows.map((r) => ({
         container_id: r.container_id, type: r.container_type, cargo: r.cargo_type, shipping_line: r.shipping_line,
-        zone: r.zone, block: r.block, slot: r.slot, arrival: r.arrival, predicted_dwell_days: r.predicted_dwell_days,
+        zone: r.zone, section: r.section, slot: r.slot, arrival: r.arrival, predicted_dwell_days: r.predicted_dwell_days,
         predicted_departure: r.predicted_departure, status: r.status, allocation_status: r.allocation_status,
         override_reason: r.override_reason,
       })))

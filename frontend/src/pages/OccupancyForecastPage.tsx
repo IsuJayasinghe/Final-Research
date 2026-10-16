@@ -24,7 +24,7 @@ export default function OccupancyForecastPage() {
   const forecast = useApi(() => api.occupancyForecast(days, capacity), [days, capacity])
   const f = forecast.data
 
-  // what-if: forecast against a smaller yard (e.g. when blocks are closed for maintenance)
+  // what-if: forecast against a smaller capacity (e.g. when bays are closed for maintenance)
   const applyCapacity = (e: FormEvent) => {
     e.preventDefault()
     const value = Number(capacityInput)
@@ -118,7 +118,7 @@ export default function OccupancyForecastPage() {
                 Try a smaller capacity to see when alerts would trigger.
               </p>
               <div className="flex gap-2">
-                <input className="input" inputMode="numeric" placeholder="e.g. 3500" value={capacityInput}
+                <input className="input" inputMode="numeric" placeholder="e.g. 800" value={capacityInput}
                        onChange={(e) => setCapacityInput(e.target.value)} />
                 <button className="btn-primary" type="submit">Apply</button>
               </div>

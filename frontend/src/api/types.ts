@@ -30,7 +30,7 @@ export interface ContainerRecord {
   shipping_line: string | null
   recommended_zone: ZoneName | null
   zone: ZoneName | null
-  block: string | null
+  section: string | null
   slot: string | null
   predicted_dwell_days: number | null
   dwell_class: DwellClass | null
@@ -73,8 +73,9 @@ export interface AllocationResult {
   dwell_class: DwellClass
   compatibility: { reefer: boolean; hazardous: boolean; oversized: boolean }
   recommended_zone: ZoneName
-  block: string
-  slot: string
+  block: string               // yard block name, e.g. "Yard Block 01"
+  section: string             // zone section of the block, e.g. "YB01_FAST"
+  slot: string                // block-bay-row-tier, e.g. "B01-07-3-T2"
   reason: string
   allocation_status: AllocationStatus
   relocated: Relocation[]
@@ -85,7 +86,8 @@ export interface AcceptResult {
   allocation_id: number
   container_id: string
   allocation_status: 'ACCEPTED'
-  block: string
+  zone: ZoneName
+  section: string
   slot: string
 }
 
@@ -94,7 +96,7 @@ export interface OverrideResult {
   container_id: string
   allocation_status: 'OVERRIDDEN'
   zone: ZoneName
-  block: string
+  section: string
   slot: string
   override_reason: string
   relocated: Relocation[]
@@ -128,20 +130,25 @@ export interface ContainerFilters {
 
 export interface ZoneSummary extends ZoneOccupancy {
   zone: ZoneName
+  section?: string
   description: string
 }
 
-export interface BlockSummary extends ZoneOccupancy {
-  block: string
+/** One zone of Yard Block 01: a range of bays; stack_heights go bay by bay, rows 1..n within a bay. */
+export interface SectionSummary extends ZoneOccupancy {
+  section: string
   zone: ZoneName
-  stacks: number
+  first_bay: number
+  bays: number
+  rows: number
   tier_height: number
   stack_heights: number[]
 }
 
 export interface YardZones {
+  block: { name: string; bays: number; rows: number; tier_height: number; stacks: number }
   zones: ZoneSummary[]
-  blocks: BlockSummary[]
+  sections: SectionSummary[]
   total: ZoneOccupancy
 }
 
@@ -223,6 +230,7 @@ export interface AlertsResponse {
 export interface ReshufflingStats {
   simulation_results: {
     containers_simulated: number
+    test_containers?: number
     runs: number
     reshuffles_random: number
     reshuffles_ai: number
@@ -252,6 +260,7 @@ export interface ModelMetrics {
       horizon_mape: Record<string, number>
     }
     zone_engine?: { zone_match_pct: number; always_fast_access_pct: number }
+    block?: { name: string; share_of_terminal: number; rows_per_bay: number; tier_height: number }
     data: { containers: number; window_start: string; window_end: string }
   }
 }

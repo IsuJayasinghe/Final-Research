@@ -84,7 +84,7 @@ export default function ReportsPage() {
                             perfect={s.reshuffles_random * (1 - s.perfect_knowledge_reduction_pct / 100)} />
             <p className="mt-2 flex gap-2 text-xs text-muted">
               <Info size={14} className="mt-0.5 shrink-0" />
-              {s.containers_simulated.toLocaleString()} test containers, {s.runs} runs. {sim.data!.method}. The AI only sees
+              Yard Block 01: about {s.containers_simulated.toLocaleString()} containers per run (its share of the test period), {s.runs} runs. {sim.data!.method}. The AI only sees
               predicted dwell times; "perfect knowledge" shows the limit if dwell were known exactly.
             </p>
           </div>
@@ -126,7 +126,8 @@ export default function ReportsPage() {
             <ul className="space-y-1.5 text-muted">
               <li><span className="text-ink">{m.data.containers.toLocaleString()}</span> containers from the Kaggle container terminal event log</li>
               <li>Modelling window: <span className="text-ink">{m.data.window_start}</span> to <span className="text-ink">{m.data.window_end}</span></li>
-              <li>Container type mix and yard blocks from Colombo Port data</li>
+              <li>Scope: one yard block (Yard Block 01), receiving {Math.round((m.block?.share_of_terminal ?? 0.25) * 100)}% of the terminal's containers</li>
+              <li>Container type mix from Colombo Port data</li>
               <li>Chronological train / test split; settings tuned on validation data only</li>
             </ul>
           </div>
@@ -135,6 +136,7 @@ export default function ReportsPage() {
             <ul className="list-disc space-y-1.5 pl-5 text-muted">
               <li>About 3 months of data, so the test period is short (17 days).</li>
               <li>Kaggle data has no container type; the simulation assigns types following the Colombo mix.</li>
+              <li>The data covers the whole terminal and does not record blocks; the block is assumed to receive a fixed share of containers.</li>
               <li>Zone classification alone is close to the "always Fast-Access" baseline; the gain comes from stacking order and yard-type rules.</li>
               <li>Future arrivals and container characteristics use weekday averages until vessel data from Component 1 is connected.</li>
             </ul>

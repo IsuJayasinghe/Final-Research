@@ -24,7 +24,7 @@ export default function RecentAllocations({ rows }: { rows: ContainerRecord[] })
           {rows.map((r) => (
             <tr key={r.allocation_id} className={r.status === 'Overstaying' ? 'bg-danger/5' : ''}>
               <td className="table-cell font-mono text-accent">
-                <Link to={`/containers?search=${r.container_id}`}>{r.container_id}</Link>
+                <Link to={`/containers?search=${r.container_id}&status=all`}>{r.container_id}</Link>
               </td>
               <td className="table-cell"><TypeBadge type={r.container_type} /></td>
               <td className="table-cell"><ZoneBadge zone={r.zone} /></td>

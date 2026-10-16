@@ -14,7 +14,7 @@ Built with Vite, Tailwind CSS, Recharts and React Router.
 | New Arrival | `/containers/new` | AI dwell prediction, zone and slot, accept / override (FR01–FR07) |
 | Dwell Prediction | `/predictions/dwell` | Prophet vs ARIMA comparison |
 | Yard Occupancy | `/predictions/occupancy` | XGBoost 14-day forecast with 85% alerts (FR03, FR08) |
-| Yard Map | `/yard-map` | Live zones, blocks and stacks |
+| Yard Map | `/yard-map` | Yard Block 01 seen from above: zones, bays and stacks |
 | Reports | `/reports` | Simulation results and results vs proposal targets |
 | Alerts | `/alerts` | Current and forecast capacity alerts (FR08) |
 
