@@ -109,6 +109,21 @@ def allocate(container, dwell_days, model_used):
     rec = recommend_zone(container_type, dwell_days)
 
     with yard_lock:
+        # A container that is already placed (accepted or overridden) is physically in the yard,
+        # so it cannot arrive again until it departs. A pending recommendation can be redone.
+        conn = _connect()
+        try:
+            with conn, conn.cursor() as cur:
+                cur.execute("""SELECT slot_id, allocation_status FROM yard.yard_allocations
+                               WHERE container_id = %s AND allocation_status IN ('ACCEPTED', 'OVERRIDDEN')""",
+                            (container_id,))
+                placed = cur.fetchone()
+        finally:
+            conn.close()
+        if placed:
+            raise YardError(f'{container_id} is already in the yard at slot {placed[0]} ({placed[1].lower()}). '
+                            'Mark it as departed before registering it again.', 409)
+
         conn = _connect()
         try:
             with conn, conn.cursor() as cur:
@@ -125,7 +140,7 @@ def allocate(container, dwell_days, model_used):
                     (container_id, container.get('container_size'), container_type, container.get('shipping_line'),
                      container.get('weight_category'), container.get('cargo_type')))
 
-                # A new recommendation replaces any earlier active one for this container
+                # A new recommendation replaces an earlier pending one for this container
                 relocated = []
                 if container_id in yard.location:
                     relocated = yard.retrieve(container_id)

@@ -96,6 +96,16 @@ def test_reallocation_cancels_previous(client):
     assert stale.status_code == 409                                                  # old one is CANCELLED
 
 
+def test_placed_container_cannot_arrive_again(client):
+    _, data = arrive(client, container_id='ZZTEST00014', container_type='DRY', dwell_days=2)
+    client.post(f"/api/allocations/{data['allocation_id']}/accept")
+    code, again = arrive(client, container_id='ZZTEST00014', container_type='DRY', dwell_days=2)
+    assert code == 409 and data['slot'] in again['message']                          # still in the yard
+    client.post('/api/containers/ZZTEST00014/depart')
+    code, back = arrive(client, container_id='ZZTEST00014', container_type='DRY', dwell_days=2)
+    assert code == 200 and back['allocation_status'] == 'RECOMMENDED'                # a later visit is fine
+
+
 def test_depart(client):
     _, data = arrive(client, container_id='ZZTEST00013', container_type='DRY', dwell_days=2)
     left = client.post('/api/containers/ZZTEST00013/depart').get_json()
@@ -108,7 +118,7 @@ def test_search_and_filters(client):
     data = client.get('/api/containers?search=ZZTEST&type=REEFER').get_json()
     assert data['total'] == 1 and data['containers'][0]['container_id'] == 'ZZTEST00002'
     released = client.get('/api/containers?search=ZZTEST&status=released').get_json()
-    assert {c['container_id'] for c in released['containers']} == {'ZZTEST00013'}
+    assert {c['container_id'] for c in released['containers']} == {'ZZTEST00013', 'ZZTEST00014'}
     reefer = client.get('/api/containers?search=ZZTEST&zone=Reefer').get_json()
     assert {c['container_id'] for c in reefer['containers']} == {'ZZTEST00002'}
 
