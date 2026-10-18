@@ -86,7 +86,7 @@ Bookings are sent through the real API, so risk, overbooking and lane choice all
 rest wait for the gate admin. In the app, switch to **Gate admin**, open **Approvals** and press *Approve all low-risk*.
 The busiest hour shows on **Gate Status**.
 
-**b) Sample documents for the OCR demo (made-up data, 21 PNG files):**
+**b) Sample documents for the OCR demo (one booking, made-up data, 21 PNG files):**
 ```bash
 python tools/make_sample_documents.py
 ```
@@ -105,7 +105,42 @@ Good set: `booking_confirmation`, `cusdec`, `gate_pass`, `vgm`, `seal_photo`, `d
 Problem files to show failures: `vgm_wrong_container`, `gate_pass_expired`, `gate_pass_blurry`, `wrong_document`,
 `seal_missing`, `*_incomplete`, `cusdec_high_risk`, `booking_confirmation_delayed_vessel`.
 
-**c) Resetting.** With no database, a backend restart clears all bookings. Seed again after restarting.
+**c) Three different appointments for the OCR demo (recommended):**
+```bash
+python tools/make_demo_appointments.py --book --approve
+```
+This writes a separate set of made-up documents for each of three appointments into
+`backend/gate/sample_documents/appointments/`, books the three through the running backend, and approves them so
+document upload is open. Without `--book` it only writes the files. Other options: `--date YYYY-MM-DD` (default
+tomorrow; the documents are dated for it), `--out DIR`, `--url http://127.0.0.1:8000`.
+Each folder also has a `README.txt` with its booking and what to expect.
+
+| | 1_clean | 2_hazardous | 3_reefer |
+|---|---|---|---|
+| Truck / container | `TRK-81001` / `MSCU5382042` | `TRK-81002` / `HLCU2745198` | `TRK-81003` / `OOLU6198420` |
+| Carrier, type, cargo | Carrier-A, standard, export | Carrier-B, hazardous, import | Carrier-C, reefer, export |
+| Booked hour | 08:00 | 10:00 | 13:00 |
+| Goods (customs) | Cotton T-shirts, HS 6109.10: **low** | Petroleum oils, HS 2710.19: **medium** | Wine, HS 2204.21: **high** |
+| Vessel (read by OCR) | MV EVER GRACE, on time | MV OCEAN PIONEER, **delayed 5 h** | MV PACIFIC STAR, **delayed 3 h** |
+| Documents needed | 6 | 7 (dangerous goods declaration) | 7 (reefer certificate) |
+| Faulty files to try first | none | `vgm__PROBLEM_wrong_container`, `gate_pass__PROBLEM_expired` | `seal_photo__PROBLEM_no_seal_number`, `driver_docs__PROBLEM_incomplete`, `gate_pass__PROBLEM_blurry` |
+| Result after fixing and submitting | no-show risk 6%, clearance 9 min | no-show risk 21%, clearance 32 min | no-show risk 9%, clearance 29 min |
+
+How to demo one appointment:
+1. In **Driver** mode open **My Trip** (or Upload Documents) and enter the truck ID, for example `TRK-81002`.
+2. Open **Upload Documents**. The approved appointment is selected.
+3. Upload each `__PROBLEM_` file into its slot (the file name starts with the slot). Each is flagged with the exact
+   reason: a wrong container number, an expired permit, a missing seal number, missing licence details, or an
+   unreadable image.
+4. Upload the file with the same slot name (`vgm.png`, `gate_pass.png`, ...) to replace it. It clears.
+5. Upload the remaining documents until it shows 6 / 6 or 7 / 7 cleared, then press *Submit documents*.
+6. Compare the three: customs risk (low, medium, high), the vessel delay, no-show risk and clearance time all differ
+   because the documents differ. That is the proof that the models read the real document content.
+
+The numbers in the last table row come from one run and can change slightly with the date and the weather forecast.
+The three appointments are in `tests/test_demo_appointments.py`, so any change that breaks this demo fails the tests.
+
+**d) Resetting.** With no database, a backend restart clears all bookings. Seed again after restarting.
 
 ## 5. A 10 minute walkthrough
 
