@@ -162,6 +162,8 @@ TEST_DATABASE_URL=postgresql://... python -m pytest tests -q   # also runs the P
 ```
 
 ## Run
+Full setup for a new computer, demo data and a walkthrough: [GETTING_STARTED.md](GETTING_STARTED.md).
+
 ```bash
 cd backend/gate
 pip install -r requirements.txt
