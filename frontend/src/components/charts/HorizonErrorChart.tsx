@@ -12,7 +12,7 @@ export default function HorizonErrorChart({ horizonMape }: { horizonMape: Record
         <CartesianGrid stroke={colors.line} strokeDasharray="3 3" vertical={false} />
         <XAxis dataKey="day" stroke={colors.muted} fontSize={10} tickLine={false} />
         <YAxis stroke={colors.muted} fontSize={10} tickLine={false} unit="%" />
-        <Tooltip contentStyle={{ background: '#111c30', border: `1px solid ${colors.line}`, borderRadius: 8, fontSize: 12 }}
+        <Tooltip contentStyle={{ background: colors.surface, border: `1px solid ${colors.line}`, borderRadius: 8, fontSize: 12 }}
                  labelFormatter={(d) => `${d} day(s) ahead`} formatter={(v: number) => [`${v.toFixed(1)}%`, 'MAPE']} />
         <Bar dataKey="mape" fill={colors.accent} radius={[3, 3, 0, 0]} isAnimationActive={false} />
       </BarChart>

@@ -5,8 +5,9 @@ export const colors = {
   ok: '#10b981',
   warn: '#f59e0b',
   danger: '#ef4444',
-  muted: '#8b9bb7',
-  line: '#24344f',
+  muted: '#a3b3cd',
+  line: '#33496f',
+  surface: '#1a2c4c',
   ink: '#e6edf7',
 }
 

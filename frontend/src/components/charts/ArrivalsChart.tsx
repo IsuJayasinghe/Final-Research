@@ -11,7 +11,7 @@ export default function ArrivalsChart({ points }: { points: OccupancyPoint[] }) 
         <CartesianGrid stroke={colors.line} strokeDasharray="3 3" vertical={false} />
         <XAxis dataKey="day" stroke={colors.muted} fontSize={11} tickLine={false} />
         <YAxis stroke={colors.muted} fontSize={11} tickLine={false} />
-        <Tooltip contentStyle={{ background: '#111c30', border: `1px solid ${colors.line}`, borderRadius: 8, fontSize: 12 }} />
+        <Tooltip contentStyle={{ background: colors.surface, border: `1px solid ${colors.line}`, borderRadius: 8, fontSize: 12 }} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         <Bar dataKey="arrivals" name="Planned arrivals" fill="#334866" radius={[3, 3, 0, 0]} isAnimationActive={false} />
         <Line type="monotone" dataKey="containers" name="Predicted containers in yard" stroke={colors.accent}

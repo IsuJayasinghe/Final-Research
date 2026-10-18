@@ -14,7 +14,7 @@ export default function DwellComparisonChart({ prophet, arima }: { prophet: Dwel
         <XAxis dataKey="day" stroke={colors.muted} fontSize={11} tickLine={false} />
         <YAxis stroke={colors.muted} fontSize={11} tickLine={false} domain={['auto', 'auto']}
                label={{ value: 'Avg dwell (days)', angle: -90, position: 'insideLeft', fill: colors.muted, fontSize: 11, dx: 14 }} />
-        <Tooltip contentStyle={{ background: '#111c30', border: `1px solid ${colors.line}`, borderRadius: 8, fontSize: 12 }}
+        <Tooltip contentStyle={{ background: colors.surface, border: `1px solid ${colors.line}`, borderRadius: 8, fontSize: 12 }}
                  formatter={(v: number) => `${v.toFixed(2)} days`} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         <Line type="monotone" dataKey="prophet" name="Prophet (Primary)" stroke={colors.accent} strokeWidth={2.5}

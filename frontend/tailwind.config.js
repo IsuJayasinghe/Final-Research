@@ -5,11 +5,11 @@ export default {
     extend: {
       colors: {
         // SmartYard dark theme (from the UI mockups)
-        page: '#0b1424',
-        surface: '#111c30',
-        card: '#16233b',
-        line: '#24344f',
-        muted: '#8b9bb7',
+        page: '#14233f',
+        surface: '#1a2c4c',
+        card: '#213659',
+        line: '#33496f',
+        muted: '#a3b3cd',
         ink: '#e6edf7',
         accent: { DEFAULT: '#22d3ee', strong: '#06b6d4', soft: '#0e3a4a' },
         ok: '#10b981',

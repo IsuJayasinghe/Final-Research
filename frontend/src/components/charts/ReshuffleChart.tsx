@@ -20,7 +20,7 @@ export default function ReshuffleChart({ random, ai, perfect }: Props) {
         <CartesianGrid stroke={colors.line} strokeDasharray="3 3" vertical={false} />
         <XAxis dataKey="name" stroke={colors.muted} fontSize={11} tickLine={false} />
         <YAxis stroke={colors.muted} fontSize={11} tickLine={false} />
-        <Tooltip contentStyle={{ background: '#111c30', border: `1px solid ${colors.line}`, borderRadius: 8, fontSize: 12 }}
+        <Tooltip contentStyle={{ background: colors.surface, border: `1px solid ${colors.line}`, borderRadius: 8, fontSize: 12 }}
                  formatter={(v: number) => [Math.round(v).toLocaleString(), 'Reshuffles']} cursor={{ fill: '#ffffff08' }} />
         <Bar dataKey="value" radius={[4, 4, 0, 0]} isAnimationActive={false}>
           {data.map((d) => <Cell key={d.name} fill={d.color} />)}
