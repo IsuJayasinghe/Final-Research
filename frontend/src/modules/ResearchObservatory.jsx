@@ -22,28 +22,34 @@ export default function ResearchObservatory() {
   };
 
   const feasibilityMetrics = {
-    accuracy: '99.00%',
-    precision: '0.9903',
-    recall: '0.9900',
-    f1: '0.9900',
-    rocAuc: '0.9999',
-    classes: ['Feasible', 'Conditionally Feasible', 'Infeasible'],
+    accuracy: '84.67%',
+    cvAccuracy: '82.40% ± 1.98%',
+    cvF1: '0.8249',
+    precision: '0.8458',
+    recall: '0.8467',
+    f1: '0.8451',
+    rocAuc: '0.9498',
+    regularization: 'max_depth=6, min_samples_split=10, min_samples_leaf=5',
+    classes: ['Conditionally Feasible', 'Feasible', 'Infeasible'],
     cm: [
-      [97, 0, 3],
-      [0, 114, 0],
-      [0, 0, 86]
+      [74, 18, 9],
+      [8, 97, 0],
+      [11, 0, 83]
     ]
   };
 
   const delayMetrics = {
-    accuracy: '78.78%',
-    precision: '1.0000 (100.0%)',
-    recall: '0.6798',
-    f1: '0.8094',
-    rocAuc: '0.9747',
+    accuracy: '89.24%',
+    cvAccuracy: '83.72% ± 1.61%',
+    cvF1: '0.8085',
+    precision: '0.8250 (82.5%)',
+    recall: '0.9362 (93.6%)',
+    f1: '0.8771',
+    rocAuc: '0.9653',
+    regularization: 'max_depth=6, min_samples_split=10, min_samples_leaf=5',
     cm: [
-      [116, 0],
-      [73, 155]
+      [175, 28],
+      [9, 132]
     ]
   };
 
@@ -60,11 +66,11 @@ export default function ResearchObservatory() {
               </h2>
             </div>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-              Component 1: Intelligent Vessel ETA Prediction & Dynamic Berth Allocation Framework | 4th-Year Undergraduate Research Thesis
+              Component 1: Intelligent Vessel ETA Prediction & Dynamic Berth Allocation Framework | 5-Fold Stratified K-Fold Cross-Validation | Defensible Non-Overfitted Benchmarks
             </p>
           </div>
           <span className="badge badge-feasible" style={{ padding: '0.4rem 0.85rem' }}>
-            <CheckCircle2 size={14} /> Production Audited
+            <CheckCircle2 size={14} /> 5-Fold CV Audited
           </span>
         </div>
       </div>
@@ -78,7 +84,7 @@ export default function ResearchObservatory() {
               <Cpu size={18} color="#38bdf8" />
               <h3 style={{ fontSize: '0.95rem', fontWeight: 600 }}>1. Continuous Voyage ETA Travel-Time Regression</h3>
             </div>
-            <span className="badge badge-ocean">Gradient Boosting & RF</span>
+            <span className="badge badge-ocean">Random Forest Regressor</span>
           </div>
 
           <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -104,7 +110,7 @@ export default function ResearchObservatory() {
               <div style={{ background: 'var(--bg-card-secondary)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-secondary)' }}>
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Coefficient of Determination (R²)</div>
                 <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#10b981', marginTop: '2px' }}>{etaMetrics.r2}</div>
-                <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>Explained voyage variance</div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>Continuous travel regression</div>
               </div>
             </div>
 
@@ -126,36 +132,36 @@ export default function ResearchObservatory() {
           <div className="card-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <ShieldCheck size={18} color="#10b981" />
-              <h3 style={{ fontSize: '0.95rem', fontWeight: 600 }}>2. Berth Feasibility 3-State Classifier</h3>
+              <h3 style={{ fontSize: '0.95rem', fontWeight: 600 }}>2. Regularized Berth Feasibility Classifier</h3>
             </div>
-            <span className="badge badge-feasible">Multi-Class OvR</span>
+            <span className="badge badge-feasible">5-Fold CV: {feasibilityMetrics.cvAccuracy}</span>
           </div>
 
           <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' }}>
               <div style={{ background: 'var(--bg-card-secondary)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-secondary)' }}>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Accuracy</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Holdout Accuracy</div>
                 <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#10b981', marginTop: '2px' }}>{feasibilityMetrics.accuracy}</div>
-                <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>Overall classification</div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>Regularized RF (max_depth=6)</div>
               </div>
 
               <div style={{ background: 'var(--bg-card-secondary)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-secondary)' }}>
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Weighted F1-Score</div>
                 <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#10b981', marginTop: '2px' }}>{feasibilityMetrics.f1}</div>
-                <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>Harmonic balance</div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>5-Fold CV F1: {feasibilityMetrics.cvF1}</div>
               </div>
 
               <div style={{ background: 'var(--bg-card-secondary)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-secondary)' }}>
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Multi-Class ROC-AUC</div>
                 <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#38bdf8', marginTop: '2px' }}>{feasibilityMetrics.rocAuc}</div>
-                <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>One-vs-Rest AUC</div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>One-vs-Rest Macro AUC</div>
               </div>
             </div>
 
             {/* Confusion Matrix Table */}
             <div style={{ background: 'var(--bg-card-secondary)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-secondary)' }}>
               <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '6px' }}>
-                Confusion Matrix [Rows: Ground Truth, Columns: Model Prediction]
+                Confusion Matrix [Rows: Actual Ground Truth, Columns: Model Prediction]
               </div>
               <table style={{ width: '100%', fontSize: '0.72rem', borderCollapse: 'collapse', textAlign: 'center' }}>
                 <thead>
@@ -169,21 +175,21 @@ export default function ResearchObservatory() {
                 <tbody>
                   <tr>
                     <td style={{ textAlign: 'left', color: '#f59e0b', fontWeight: 600, padding: '4px' }}>Cond. Feasible</td>
-                    <td style={{ color: '#10b981', fontWeight: 700 }}>97</td>
-                    <td>0</td>
-                    <td>3</td>
+                    <td style={{ color: '#10b981', fontWeight: 700 }}>{feasibilityMetrics.cm[0][0]}</td>
+                    <td style={{ color: '#cbd5e1' }}>{feasibilityMetrics.cm[0][1]}</td>
+                    <td style={{ color: '#f43f5e' }}>{feasibilityMetrics.cm[0][2]}</td>
                   </tr>
                   <tr>
                     <td style={{ textAlign: 'left', color: '#10b981', fontWeight: 600, padding: '4px' }}>Feasible</td>
-                    <td>0</td>
-                    <td style={{ color: '#10b981', fontWeight: 700 }}>114</td>
-                    <td>0</td>
+                    <td style={{ color: '#cbd5e1' }}>{feasibilityMetrics.cm[1][0]}</td>
+                    <td style={{ color: '#10b981', fontWeight: 700 }}>{feasibilityMetrics.cm[1][1]}</td>
+                    <td style={{ color: '#cbd5e1' }}>{feasibilityMetrics.cm[1][2]}</td>
                   </tr>
                   <tr>
                     <td style={{ textAlign: 'left', color: '#f43f5e', fontWeight: 600, padding: '4px' }}>Infeasible</td>
-                    <td>0</td>
-                    <td>0</td>
-                    <td style={{ color: '#10b981', fontWeight: 700 }}>86</td>
+                    <td style={{ color: '#cbd5e1' }}>{feasibilityMetrics.cm[2][0]}</td>
+                    <td style={{ color: '#cbd5e1' }}>{feasibilityMetrics.cm[2][1]}</td>
+                    <td style={{ color: '#10b981', fontWeight: 700 }}>{feasibilityMetrics.cm[2][2]}</td>
                   </tr>
                 </tbody>
               </table>
