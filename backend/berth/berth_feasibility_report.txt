@@ -1,0 +1,20 @@
+======================================================================
+Model: Random Forest
+======================================================================
+Overall Accuracy:    0.9833 (98.33%)
+Weighted Precision:  0.9838
+Weighted Recall:     0.9833
+Weighted F1-Score:   0.9834
+----------------------------------------------------------------------
+Classification Report:
+                        precision    recall  f1-score   support
+
+Conditionally Feasible       0.99      0.96      0.97        81
+              Feasible       1.00      0.99      0.99        91
+            Infeasible       0.96      1.00      0.98        68
+
+              accuracy                           0.98       240
+             macro avg       0.98      0.98      0.98       240
+          weighted avg       0.98      0.98      0.98       240
+
+======================================================================

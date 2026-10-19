@@ -1,0 +1,56 @@
+================================================================================
+SMART PORT MANAGEMENT SYSTEM - COMPONENT 1: ML MODEL EVALUATION REPORT
+Generated At: 2026-10-19 08:54:24 UTC
+Dataset: vessel_historical_data.csv (Total Records: 1720, Test Split: 20%)
+================================================================================
+
+1. MODULE 1: ESTIMATED TIME OF ARRIVAL (ETA) MODEL
+--------------------------------------------------------------------------------
+Model Type:            RandomForestRegressor
+Target Feature:        actual_remaining_hours
+Input Features:        sog, distance_to_port_nmi, draft_m, wind_speed_knots, wave_height_m
+Test Sample Size:      344 instances
+
+Performance Metrics:
+  - Mean Absolute Error (MAE):       8.5714 hours
+  - Root Mean Squared Error (RMSE):  9.9600 hours
+  - Mean Squared Error (MSE):        99.2024
+  - R-squared (R2) Score:            0.4707
+
+Operational Assessment:
+  The ETA regression model establishes continuous voyage transit estimation
+  incorporating speed over ground, distance to port, vessel draft, and ambient
+  sea state conditions.
+
+
+2. MODULE 2: DELAY & OPERATIONAL RISK PREDICTION MODEL
+--------------------------------------------------------------------------------
+Model Type:            RandomForestClassifier
+Target Feature:        high_delay_risk (Binary Classification)
+Input Features:        sog, distance_to_port_nmi, draft_m, wind_speed_knots, wave_height_m, weather_severity, speed_drop_factor, hydrodynamic_drag
+Test Sample Size:      344 instances
+
+Performance Metrics:
+  - Accuracy:                        78.78%
+  - Precision:                       1.0000
+  - Recall:                          0.6798
+  - F1-Score:                        0.8094
+  - ROC-AUC Score:                   0.9747
+
+Confusion Matrix:
+  [[TN: 116,  FP:   0]
+   [FN:  73,  TP: 155]]
+
+Operational Assessment:
+  The Delay Risk module demonstrates high precision (100.00%) in detecting
+  vessels at risk of schedule disruption, serving as an automated decision
+  trigger for berth unbooking and dynamic slot reassignment.
+
+
+3. SUMMARY & SYSTEM READINESS
+--------------------------------------------------------------------------------
+Status:                PRODUCTION READY
+ETA Model Artifact:    eta_model.pkl (Loaded Successfully)
+Delay Model Artifact:  delay_model.pkl (Loaded Successfully)
+Automated Workflow:    Dual-model inference active via FastAPI (/api/vessels/predict-eta)
+================================================================================
