@@ -1,20 +1,40 @@
-======================================================================
-Model: Random Forest
-======================================================================
-Overall Accuracy:    0.9833 (98.33%)
-Weighted Precision:  0.9838
-Weighted Recall:     0.9833
-Weighted F1-Score:   0.9834
-----------------------------------------------------------------------
-Classification Report:
+===========================================================================
+SMART PORT RESEARCH - COMPONENT 1: MODEL EVALUATION AUDIT REPORT
+Generated At: 2026-10-19 18:25:56 UTC
+Dataset: 1720 Telemetry Records | 49 Physical Berths
+===========================================================================
+
+1. CONTINUOUS ETA TRAVEL-TIME REGRESSION METRICS:
+   - Model Type:                     RandomForestRegressor
+   - Input Features:                 sog, distance_to_port_nmi, draft_m, wind_speed_knots, wave_height_m
+   - Mean Absolute Error (MAE):      8.5714 hours
+   - Root Mean Squared Error (RMSE): 9.9600 hours
+   - Mean Squared Error (MSE):       99.2024
+   - R-squared (R2) Score:           0.4707
+
+2. BERTH FEASIBILITY CLASSIFICATION METRICS:
+   - Model Type:                     RandomForestClassifier
+   - Target Classes:                 Conditionally Feasible, Feasible, Infeasible
+   - Overall Accuracy:               0.9900 (99.00%)
+   - Weighted Precision:             0.9903
+   - Weighted Recall:                0.9900
+   - Weighted F1-Score:              0.9900
+   - Multi-Class ROC-AUC (OvR):      0.9999
+
+Confusion Matrix:
+[[ 97   0   3]
+ [  0 114   0]
+ [  0   0  86]]
+
+Detailed Classification Report:
                         precision    recall  f1-score   support
 
-Conditionally Feasible       0.99      0.96      0.97        81
-              Feasible       1.00      0.99      0.99        91
-            Infeasible       0.96      1.00      0.98        68
+Conditionally Feasible     1.0000    0.9700    0.9848       100
+              Feasible     1.0000    1.0000    1.0000       114
+            Infeasible     0.9663    1.0000    0.9829        86
 
-              accuracy                           0.98       240
-             macro avg       0.98      0.98      0.98       240
-          weighted avg       0.98      0.98      0.98       240
+              accuracy                         0.9900       300
+             macro avg     0.9888    0.9900    0.9892       300
+          weighted avg     0.9903    0.9900    0.9900       300
 
-======================================================================
+===========================================================================

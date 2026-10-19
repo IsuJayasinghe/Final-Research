@@ -25,14 +25,21 @@ def get_paths():
     backend_dir = app_dir.parent
     root_dir = backend_dir.parent
 
-    csv_path = root_dir / "vessel_historical_data.csv"
-    if not csv_path.exists():
-        csv_path = Path("vessel_historical_data.csv").resolve()
+    # Search paths for vessel historical data
+    search_dirs = [backend_dir, root_dir, backend_dir.parent, Path.cwd()]
+    csv_path = None
+    for d in search_dirs:
+        candidate = d / "vessel_historical_data.csv"
+        if candidate.exists():
+            csv_path = candidate
+            break
+
+    db_path = backend_dir / "smart_port.db"
 
     model_path_ml = ml_dir / "delay_model.pkl"
     model_path_backend = backend_dir / "delay_model.pkl"
 
-    return csv_path, model_path_ml, model_path_backend
+    return csv_path, db_path, model_path_ml, model_path_backend
 
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     """Computes operational and environmental features for delay risk modeling."""
@@ -50,13 +57,20 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     return data
 
 def train_and_save_delay_model():
-    csv_path, model_path_ml, model_path_backend = get_paths()
-    print(f"Loading vessel historical data from: {csv_path}")
+    csv_path, db_path, model_path_ml, model_path_backend = get_paths()
 
-    if not csv_path.exists():
-        raise FileNotFoundError(f"Dataset not found at {csv_path}")
+    if csv_path and csv_path.exists():
+        print(f"Loading vessel historical data from CSV: {csv_path}")
+        raw_df = pd.read_csv(csv_path)
+    elif db_path.exists():
+        import sqlite3
+        print(f"Loading vessel historical data from SQLite: {db_path}")
+        conn = sqlite3.connect(db_path)
+        raw_df = pd.read_sql("SELECT * FROM vessel_historical_data", conn)
+        conn.close()
+    else:
+        raise FileNotFoundError(f"Dataset not found at CSV or database: {db_path}")
 
-    raw_df = pd.read_csv(csv_path)
     clean_df = engineer_features(raw_df)
 
     # Calculate nominal kinematics time (distance / speed)

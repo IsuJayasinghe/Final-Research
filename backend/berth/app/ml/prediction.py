@@ -419,21 +419,30 @@ def predict_vessel_eta(
 
     if active_booking:
         try:
-            # Check if dynamic arrival drifts past booked end_time or significantly past start_time
             booked_start = datetime.fromisoformat(active_booking["start_time"].replace("Z", "+00:00"))
             booked_end = datetime.fromisoformat(active_booking["end_time"].replace("Z", "+00:00"))
 
-            if dynamic_arrival_dt > booked_start:
-                overrun_hours = (dynamic_arrival_dt - booked_start).total_seconds() / 3600.0
-                schedule_status["schedule_violation"] = True
-                schedule_status["delay_overrun_hours"] = round(overrun_hours, 2)
-                schedule_status["schedule_advisory"] = (
-                    f"Vessel dynamic ETA ({dynamic_arrival_dt.strftime('%Y-%m-%d %H:%M')} UTC) "
-                    f"drifts {overrun_hours:.1f} hrs past booked start window."
-                )
+            is_delayed_overrun = dynamic_arrival_dt > booked_start
+            is_slot_expiration_conflict = (dynamic_arrival_dt + timedelta(hours=3.0)) > booked_end
+            is_risk_triggered = delay_risk.get("trigger_reassignment", False)
 
-                if auto_trigger_reassignment or delay_risk["trigger_reassignment"]:
-                    # Invoke berth unbooking & reassignment logic
+            if is_delayed_overrun or is_slot_expiration_conflict or is_risk_triggered:
+                schedule_status["schedule_violation"] = True
+                overrun_hours = max(0.0, (dynamic_arrival_dt - booked_start).total_seconds() / 3600.0)
+                schedule_status["delay_overrun_hours"] = round(overrun_hours, 2)
+
+                reasons = []
+                if is_delayed_overrun:
+                    reasons.append(f"Dynamic ETA ({dynamic_arrival_dt.strftime('%Y-%m-%d %H:%M')} UTC) drifts {overrun_hours:.1f} hrs past booked start window.")
+                if is_slot_expiration_conflict and not is_delayed_overrun:
+                    reasons.append(f"Vessel arrival window cannot complete cargo operations prior to slot expiration at {booked_end.strftime('%Y-%m-%d %H:%M')} UTC.")
+                if is_risk_triggered:
+                    reasons.append(f"Delay risk classified as {delay_risk.get('risk_level', 'HIGH')} due to severe meteo-oceanographic factors.")
+
+                schedule_status["schedule_advisory"] = " | ".join(reasons)
+
+                if auto_trigger_reassignment or is_risk_triggered:
+                    # Invoke event-driven dynamic berth unbooking & reallocation
                     try:
                         from app.berth_allocator import cancel_and_reassign_berth
                     except ImportError:
@@ -447,8 +456,11 @@ def predict_vessel_eta(
                         length_m=float(telemetry.get("length_m", 300.0)),
                         draft_m=draft
                     )
+                    schedule_status["automated_reassignment_triggered"] = True
+                    schedule_status["new_berth_assigned"] = reassignment_execution.get("new_booking", {}).get("berth_id") if reassignment_execution else None
         except Exception as e:
             schedule_status["error"] = str(e)
+
 
     return {
         "vessel_info": {

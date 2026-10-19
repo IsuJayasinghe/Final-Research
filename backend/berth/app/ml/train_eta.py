@@ -17,32 +17,45 @@ def get_paths():
     backend_dir = app_dir.parent
     root_dir = backend_dir.parent
 
-    # CSV path in root
-    csv_path = root_dir / "vessel_historical_data.csv"
-    if not csv_path.exists():
-        # Fallback check in current working directory
-        csv_path = Path("vessel_historical_data.csv").resolve()
+    # Search paths for vessel historical data
+    search_dirs = [backend_dir, root_dir, backend_dir.parent, Path.cwd()]
+    csv_path = None
+    for d in search_dirs:
+        candidate = d / "vessel_historical_data.csv"
+        if candidate.exists():
+            csv_path = candidate
+            break
+
+    db_path = backend_dir / "smart_port.db"
 
     # Destination paths for model artifact
     model_path_ml = ml_dir / "eta_model.pkl"
     model_path_backend = backend_dir / "eta_model.pkl"
 
-    return csv_path, model_path_ml, model_path_backend
+    return csv_path, db_path, model_path_ml, model_path_backend
 
 def train_and_save_model():
-    csv_path, model_path_ml, model_path_backend = get_paths()
-    print(f"Loading vessel historical data from: {csv_path}")
+    csv_path, db_path, model_path_ml, model_path_backend = get_paths()
 
-    if not csv_path.exists():
-        raise FileNotFoundError(f"Historical dataset not found at {csv_path}")
+    if csv_path and csv_path.exists():
+        print(f"Loading vessel historical data from CSV: {csv_path}")
+        df = pd.read_csv(csv_path)
+    elif db_path.exists():
+        import sqlite3
+        print(f"Loading vessel historical data from SQLite: {db_path}")
+        conn = sqlite3.connect(db_path)
+        df = pd.read_sql("SELECT * FROM vessel_historical_data", conn)
+        conn.close()
+    else:
+        raise FileNotFoundError(f"Historical dataset not found at CSV or database: {db_path}")
 
-    df = pd.read_csv(csv_path)
     print(f"Dataset shape: {df.shape}")
 
     # Check for missing values in features and target
     required_cols = FEATURE_COLUMNS + [TARGET_COLUMN]
     missing_cols = [col for col in required_cols if col not in df.columns]
     if missing_cols:
+
         raise ValueError(f"Missing required columns in dataset: {missing_cols}")
 
     clean_df = df[required_cols].dropna()

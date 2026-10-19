@@ -73,36 +73,51 @@ def test_all():
     print(f"Weather Delay: +{pred_result['eta_prediction']['weather_delay_hours']} hrs")
     print(f"Schedule Status: {pred_result['schedule_status']}")
 
-    print("\n=== STEP 4: Live HTTP Endpoints Verification ===")
+    print("\n=== STEP 4: FastAPI Route Handlers Verification ===")
+    from app.main import (
+        predict_eta,
+        assess_delay_risk_endpoint,
+        health_check,
+        list_berths,
+        get_berth_matrix,
+        VesselTelemetryRequest
+    )
+
+    # 4.1 Health Check
+    health = health_check()
+    print("GET /api/health -> Status:", health["status"], "| DB connected:", health["database_connected"])
+
+    # 4.2 Telemetry Request Schema validation
+    telemetry_req = VesselTelemetryRequest(**storm_telemetry)
+    print("VesselTelemetryRequest validated successfully for:", telemetry_req.vessel_name)
+
+    # 4.3 POST /api/vessels/assess-delay-risk
+    risk_endpoint_resp = assess_delay_risk_endpoint(telemetry_req)
+    print("POST /api/vessels/assess-delay-risk -> Risk Level:", risk_endpoint_resp["risk_level"], "| Trigger Reassignment:", risk_endpoint_resp["trigger_reassignment"])
+
+    # 4.4 POST /api/vessels/predict-eta
+    eta_endpoint_resp = predict_eta(telemetry_req, auto_trigger_reassignment=False)
+    print("POST /api/vessels/predict-eta -> Baseline ETA:", eta_endpoint_resp["eta_prediction"]["baseline_eta"])
+    print("POST /api/vessels/predict-eta -> Dynamic ETA: ", eta_endpoint_resp["eta_prediction"]["dynamic_eta"])
+    print("POST /api/vessels/predict-eta -> Weather Penalty:", eta_endpoint_resp["environmental_impact"]["weather_penalty_percent"], "%")
+
+    # 4.5 Optional Live HTTP Daemon Check (if server running on localhost:8000)
+    print("\n=== STEP 5: Live HTTP Network Check (Optional) ===")
     try:
-        # Test /api/vessels/assess-delay-risk over HTTP
         req_data = json.dumps(storm_telemetry).encode('utf-8')
         req = urllib.request.Request(
             'http://localhost:8000/api/vessels/assess-delay-risk',
             data=req_data,
             headers={'Content-Type': 'application/json'}
         )
-        with urllib.request.urlopen(req, timeout=5) as response:
+        with urllib.request.urlopen(req, timeout=2) as response:
             res_json = json.loads(response.read().decode('utf-8'))
-            print("HTTP POST /api/vessels/assess-delay-risk -> Status:", response.status)
-            print("Response Risk Level:", res_json['risk_level'], "| Reassignment Flag:", res_json['trigger_reassignment'])
-
-        # Test /api/vessels/predict-eta over HTTP
-        req_eta = urllib.request.Request(
-            'http://localhost:8000/api/vessels/predict-eta',
-            data=req_data,
-            headers={'Content-Type': 'application/json'}
-        )
-        with urllib.request.urlopen(req_eta, timeout=5) as response:
-            res_eta = json.loads(response.read().decode('utf-8'))
-            print("HTTP POST /api/vessels/predict-eta -> Status:", response.status)
-            print("Response Dynamic ETA:", res_eta['eta_prediction']['dynamic_eta'])
-            print("Response Delay Probability:", res_eta['delay_risk_assessment']['delay_probability_percent'], "%")
-
-    except Exception as e:
-        print("Note on HTTP check:", e)
+            print("HTTP Daemon is active on localhost:8000 -> Status:", response.status)
+    except Exception:
+        print("Note: Live HTTP server not currently listening on port 8000 (run: uvicorn main:app --reload). Route handlers verified in-process.")
 
     print("\nAll integration and validation checks passed successfully!")
 
 if __name__ == "__main__":
     test_all()
+

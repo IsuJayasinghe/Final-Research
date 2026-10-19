@@ -64,6 +64,7 @@ class VesselTelemetryRequest(BaseModel):
     wind_speed_knots: float = Field(..., ge=0.0, description="Ambient wind speed (knots)")
     wave_height_m: float = Field(..., ge=0.0, description="Significant wave height (meters)")
     draft_m: float = Field(..., gt=0.0, description="Vessel current draft (meters)")
+    length_m: Optional[float] = Field(300.0, gt=0.0, description="Vessel overall length in meters (default 300.0)")
     distance_to_port_nmi: Optional[float] = Field(None, ge=0.0, description="Distance to port (nmi). Auto-computed if omitted.")
 
     model_config = {
@@ -80,10 +81,12 @@ class VesselTelemetryRequest(BaseModel):
                 "wind_speed_knots": 24.5,
                 "wave_height_m": 2.8,
                 "draft_m": 14.9,
+                "length_m": 397.0,
                 "timestamp": "2026-10-19T08:00:00Z"
             }
         }
     }
+
 
 class BerthInfo(BaseModel):
     berth_id: str
@@ -200,6 +203,8 @@ def root():
             "cancel_reassign": "POST /api/berths/cancel-reassign",
             "bookings": "GET /api/berths/bookings",
             "berths_list": "GET /api/berths",
+            "berth_matrix": "GET /api/berths/matrix",
+            "berth_detail": "GET /api/berths/{berth_id}",
             "sample_telemetry": "GET /api/vessels/sample",
             "health": "GET /api/health",
             "docs": "/docs"
@@ -259,6 +264,128 @@ def list_berths():
         "total_berths": len(rows),
         "berths": rows
     }
+
+@app.get("/api/berths/matrix")
+def get_berth_matrix():
+    """
+    Returns an aggregated berth occupancy matrix grouped by terminal.
+    Optimized for React frontend dashboard grids and timeline visualizers.
+    """
+    db_path = get_db_path()
+    if not db_path.exists():
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not found.")
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT instance_id, terminal_name, berth_id, max_length_m, max_draft_m, crane_count, crane_handling_rate_teu_hr
+        FROM berth_characteristics
+        ORDER BY terminal_name, berth_id
+    """)
+    berths = [dict(row) for row in cursor.fetchall()]
+
+    # Fetch active reservations
+    cursor.execute("""
+        SELECT booking_id, vessel_imo, vessel_name, berth_id, start_time, end_time, status
+        FROM berth_bookings
+        WHERE status = 'BOOKED'
+        ORDER BY start_time ASC
+    """)
+    active_bookings = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+
+    now_utc_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Map bookings to berths
+    berth_bookings_map: Dict[str, List[Dict[str, Any]]] = {}
+    for b in active_bookings:
+        berth_bookings_map.setdefault(b["berth_id"], []).append(b)
+
+    terminals: Dict[str, List[Dict[str, Any]]] = {}
+    total_occupied = 0
+
+    for b in berths:
+        t_name = b["terminal_name"]
+        b_id = b["berth_id"]
+        b_bookings = berth_bookings_map.get(b_id, [])
+
+        # Check if currently occupied
+        current_occ = None
+        for bk in b_bookings:
+            if bk["start_time"] <= now_utc_str <= bk["end_time"]:
+                current_occ = bk
+                break
+        if not current_occ and b_bookings:
+            # If no booking exactly right now, point to earliest upcoming
+            current_occ = b_bookings[0]
+
+        is_occupied = (current_occ is not None)
+        if is_occupied:
+            total_occupied += 1
+
+        berth_payload = {
+            **b,
+            "is_occupied": is_occupied,
+            "current_booking": current_occ,
+            "upcoming_bookings_count": len(b_bookings),
+            "upcoming_bookings": b_bookings[:3]
+        }
+        terminals.setdefault(t_name, []).append(berth_payload)
+
+    return {
+        "status": "success",
+        "timestamp": now_utc_str,
+        "total_berths": len(berths),
+        "total_occupied_slots": total_occupied,
+        "total_terminals": len(terminals),
+        "terminal_matrix": terminals
+    }
+
+@app.get("/api/berths/{berth_id}")
+def get_berth_detail(berth_id: str):
+    """Returns detailed characteristics and reservation history for a specific berth."""
+    db_path = get_db_path()
+    if not db_path.exists():
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not found.")
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT instance_id, terminal_name, berth_id, max_length_m, max_draft_m, crane_count, crane_handling_rate_teu_hr
+        FROM berth_characteristics
+        WHERE berth_id = ?
+    """, (berth_id,))
+    row = cursor.fetchone()
+
+    if not row:
+        conn.close()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Berth '{berth_id}' not found in port database."
+        )
+
+    berth_info = dict(row)
+
+    cursor.execute("""
+        SELECT booking_id, vessel_imo, vessel_name, berth_id, start_time, end_time, status
+        FROM berth_bookings
+        WHERE berth_id = ?
+        ORDER BY start_time ASC
+    """, (berth_id,))
+    bookings = [dict(b) for b in cursor.fetchall()]
+    conn.close()
+
+    return {
+        "status": "success",
+        "berth": berth_info,
+        "total_bookings": len(bookings),
+        "bookings": bookings
+    }
+
 
 @app.post("/api/vessels/predict-eta", response_model=DynamicEtaResponse)
 def predict_eta(

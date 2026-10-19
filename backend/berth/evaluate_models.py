@@ -18,32 +18,54 @@ from sklearn.metrics import (
     confusion_matrix
 )
 
-def find_file(filename: str, search_dirs: list) -> Path:
+import sqlite3
+
+def find_file(filename: str, search_dirs: list) -> Optional[Path]:
     for d in search_dirs:
         p = d / filename
         if p.exists():
             return p
-    raise FileNotFoundError(f"Could not find '{filename}' in search directories: {[str(d) for d in search_dirs]}")
+    return None
+
+def load_vessel_data(backend_dir: Path) -> Tuple[pd.DataFrame, str]:
+    root_dir = backend_dir.parent
+    csv_search_dirs = [backend_dir, root_dir, backend_dir.parent, Path.cwd()]
+    csv_path = find_file("vessel_historical_data.csv", csv_search_dirs)
+    if csv_path:
+        print(f"Loading dataset from CSV: {csv_path}")
+        return pd.read_csv(csv_path), csv_path.name
+
+    db_path = backend_dir / "smart_port.db"
+    if db_path.exists():
+        print(f"Loading dataset from SQLite: {db_path}")
+        conn = sqlite3.connect(db_path)
+        df = pd.read_sql("SELECT * FROM vessel_historical_data", conn)
+        conn.close()
+        return df, "smart_port.db (vessel_historical_data)"
+
+    raise FileNotFoundError("Could not find vessel_historical_data in CSV or smart_port.db.")
 
 def evaluate_models():
     backend_dir = Path(__file__).resolve().parent
     root_dir = backend_dir.parent
 
-    # Locate CSV and model artifacts
-    csv_search_dirs = [root_dir, backend_dir, Path.cwd()]
-    csv_path = find_file("vessel_historical_data.csv", csv_search_dirs)
+    # Locate dataset and model artifacts
+    raw_df, source_name = load_vessel_data(backend_dir)
+    total_records = len(raw_df)
+
 
     eta_model_search_dirs = [backend_dir / "app" / "ml", backend_dir, Path.cwd()]
     eta_model_path = find_file("eta_model.pkl", eta_model_search_dirs)
+    if not eta_model_path:
+        raise FileNotFoundError("eta_model.pkl not found.")
 
     delay_model_search_dirs = [backend_dir / "app" / "ml", backend_dir, Path.cwd()]
     delay_model_path = find_file("delay_model.pkl", delay_model_search_dirs)
+    if not delay_model_path:
+        raise FileNotFoundError("delay_model.pkl not found.")
 
     report_path = backend_dir / "evaluation_report.txt"
 
-    print(f"Loading dataset from: {csv_path}")
-    raw_df = pd.read_csv(csv_path)
-    total_records = len(raw_df)
 
     # ---------------------------------------------------------
     # 1. EVALUATE ETA MODEL
@@ -113,7 +135,7 @@ def evaluate_models():
     report_content = f"""================================================================================
 SMART PORT MANAGEMENT SYSTEM - COMPONENT 1: ML MODEL EVALUATION REPORT
 Generated At: {now_str}
-Dataset: {csv_path.name} (Total Records: {total_records}, Test Split: 20%)
+Dataset: {source_name} (Total Records: {total_records}, Test Split: 20%)
 ================================================================================
 
 1. MODULE 1: ESTIMATED TIME OF ARRIVAL (ETA) MODEL
