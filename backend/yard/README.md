@@ -37,12 +37,14 @@ The API runs on http://localhost:5001 – open http://localhost:5001/api/health 
 
 ## Demo data (optional)
 
-Loads 1,250 real-mix Colombo containers into Yard Block 01 over the last 7 days (under a minute).
+Loads 1,700 real-mix Colombo containers into Yard Block 01 over the last 7 days (under a minute).
 **`--reset` deletes all containers and allocations in the yard tables first.**
 Stop the API, run the loader, then start the API again:
 ```
 python scripts/load_demo_data.py --reset
 ```
+Containers only leave when they are departed, so the overstaying count grows each day after loading.
+Reload on the day of a demo.
 
 ## Tests
 

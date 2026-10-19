@@ -84,7 +84,7 @@ def backdate(container_id, arrival, dwell_days, released_at=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--count', type=int, default=1250, help='number of containers to load')
+    parser.add_argument('--count', type=int, default=1700, help='number of containers to load')
     parser.add_argument('--days', type=int, default=7, help='spread arrivals over the last N days')
     parser.add_argument('--reset', action='store_true', help='clear the yard tables first')
     parser.add_argument('--seed', type=int, default=42)
@@ -154,9 +154,10 @@ def main():
             stats['accepted'] += 1
         backdate(container['container_id'], arrival, dwell)
 
-        # actual stay differs from the prediction; some containers stay on past it (overstaying)
-        actual = dwell * rng.lognormvariate(0, 0.45)
-        if rng.random() < 0.9:
+        # actual stay differs from the prediction: most leave around or a little before it, some stay on
+        # past it (overstaying) and a few are not collected at all - about 10-15% overstaying after loading
+        actual = dwell * rng.lognormvariate(-0.25, 0.35)
+        if rng.random() < 0.97:
             heapq.heappush(leaving, (arrival + timedelta(days=actual), container['container_id'], arrival, dwell))
 
     depart_until(now)
