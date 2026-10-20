@@ -165,11 +165,9 @@ ocr = pytest.mark.skipif(not docs.ocr_available(), reason="rapidocr_onnxruntime 
 
 @pytest.fixture(scope="module")
 def samples(tmp_path_factory):
-    from tools import make_sample_documents as gen
+    from doc_fixtures import make_samples
 
-    out = tmp_path_factory.mktemp("samples")
-    gen.main(out)
-    return out
+    return make_samples(tmp_path_factory.mktemp("samples"), CTX["expected_date"])
 
 
 def check(samples, name, slot):
@@ -221,8 +219,11 @@ def test_ocr_degraded_scan_is_not_cleared(samples):
 def test_ocr_reads_a_pdf_made_from_an_image(samples):
     import fitz
 
+    from PIL import Image
+
+    w, h = Image.open(samples / "vgm.png").size
     pdf = fitz.open()
-    page = pdf.new_page(width=600, height=400)
+    page = pdf.new_page(width=600, height=round(600 * h / w))  # keep the form's proportions
     page.insert_image(page.rect, filename=str(samples / "vgm.png"))
     r = docs.check_document(pdf.tobytes(), "vgm.pdf", "vgm", CTX)
     assert r["status"] == "cleared" and r["engine"] == "ocr"

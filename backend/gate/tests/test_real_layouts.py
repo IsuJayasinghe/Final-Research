@@ -172,7 +172,7 @@ def test_a_slot_outside_the_pass_window_is_a_warning_and_a_pass_for_another_day_
 @ocr_needed
 @pytest.mark.parametrize("scenario", demo.SCENARIOS, ids=lambda s: s.key)
 def test_every_real_format_document_is_read_and_cleared(scenario, tmp_path):
-    demo.write_documents(scenario, tmp_path, DATE, "real")
+    demo.write_documents(scenario, tmp_path, DATE)
     ctx = {"expected_container_id": scenario.container, "expected_truck_id": scenario.truck, "expected_date": DATE,
            "container_type": scenario.container_type}
     for slot in documents.required_documents(scenario.container_type):
