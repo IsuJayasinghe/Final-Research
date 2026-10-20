@@ -15,7 +15,7 @@ checks fail, then replace them with the file of the same slot name. Each folder 
 to make and what to expect.
 
 Usage:
-  python tools/make_demo_appointments.py [--out DIR] [--date YYYY-MM-DD] [--style real|simple]   write the documents
+  python tools/make_demo_appointments.py [--out DIR] [--date YYYY-MM-DD]                          write the documents
   python tools/make_demo_appointments.py --book [--approve] [--url http://127.0.0.1:8000]       also book (and approve)
 
 Default output: backend/gate/sample_documents/appointments/ (git-ignored). All contents are made up.
@@ -34,7 +34,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from documents import iso6346_check_digit  # noqa: E402
-from tools import make_sample_documents as base  # noqa: E402
 from tools import real_format_documents as real  # noqa: E402
 
 
@@ -78,23 +77,11 @@ class Scenario:
     expect: list[str] = field(default_factory=list)
 
     @property
-    def driver(self) -> str:  # the simple generator's name
-        return f"{self.driver_given.title().split()[0][0]}. {self.driver_surname.title()}"
-
-    @property
-    def vehicle(self) -> str:
-        return self.plate
-
-    @property
     def owner(self) -> str:
         return self.driver_initials().upper()
 
     def driver_initials(self) -> str:
         return "".join(f"{w[0]}." for w in self.driver_given.split()) + self.driver_surname.title()
-
-    @property
-    def licence_no(self) -> str:
-        return self.licence
 
 
 SCENARIOS = [
@@ -164,32 +151,22 @@ SLOT_FILES = {
 }
 
 
-def _special_cargo(s: Scenario, out: Path, appt_date: str) -> None:
-    c = s.container
-    if s.container_type == "hazardous":
-        base.render("DANGEROUS GOODS DECLARATION", s.cargo_note[:2] + [f"Container: {c}"] + s.cargo_note[2:], out / "special_cargo.png")
-    elif s.container_type == "reefer":
-        base.render(
-            "REEFER PRE-TRIP INSPECTION CERTIFICATE",
-            [f"Container: {c}", s.cargo_note[0], f"Pre-trip inspection completed {appt_date}", s.cargo_note[1]],
-            out / "special_cargo.png",
-        )
-
-
-def write_documents_real(s: Scenario, out: Path, appt_date: str) -> None:
-    """The documents in the layout of the real forms."""
+def write_documents(s: Scenario, out: Path, appt_date: str) -> None:
+    """The documents in the layout of the real forms, the faulty versions, and a README.txt for the scenario."""
+    out.mkdir(parents=True, exist_ok=True)
     real.booking_confirmation(s, out, "booking_confirmation", appt_date)
     real.cusdec(s, out, "cusdec", appt_date)
     real.gate_pass(s, out, "gate_pass", appt_date)
     real.vgm(s, out, "vgm", appt_date)
     real.seal_report(s, out, "seal_photo", appt_date)
     real.driver_card(s, out, "driver_docs", appt_date)
-    _special_cargo(s, out, appt_date)
+    if s.container_type in ("hazardous", "reefer"):
+        real.special_cargo(s, out, "special_cargo", appt_date)
 
     for slot, what in s.problems:
         name = f"{SLOT_FILES[slot]}__PROBLEM_{what}"
         if slot == "vgm":
-            real.vgm(s, out, name, appt_date, container=base.OTHER_CONTAINER)
+            real.vgm(s, out, name, appt_date, container=real.OTHER_CONTAINER)
         elif slot == "gate_pass" and what == "expired":
             real.gate_pass(s, out, name, appt_date, pass_dates=("2019-12-30", "2020-01-01"))
         elif slot == "gate_pass" and what == "blurry":
@@ -200,75 +177,6 @@ def write_documents_real(s: Scenario, out: Path, appt_date: str) -> None:
             real.seal_report(s, out, name, appt_date, with_seal=False)
         elif slot == "driver_docs":
             real.driver_card(s, out, name, appt_date, complete=False)
-
-
-def write_documents_simple(s: Scenario, out: Path, appt_date: str) -> None:
-    """One line of 'Label: value' per field (the original generator's style)."""
-    render = base.render
-    c = s.container
-    weight = s.weight_kg
-
-    def booking_doc() -> None:
-        render("BOOKING CONFIRMATION", [
-            f"Booking No: {s.booking_no}", f"Container No: {c}", f"Vessel: {s.vessel}   Voyage: {s.voyage}",
-            f"Port of Loading: Colombo   Port of Discharge: {s.pod}", f"ETD: {appt_date}   Shipper: {s.shipper}",
-        ], out / "booking_confirmation.png", "Sri Lanka Ports Authority - Terminal Booking")
-
-    def gate_pass_doc(name="gate_pass", valid=None) -> None:
-        start, end = valid or (f"{appt_date} 09:00", f"{appt_date} 12:00")
-        render("GATE PASS", [
-            f"Truck: {s.truck}   Vehicle No: {s.plate}", f"Container: {c}", f"Valid from {start}   Valid until {end}",
-            "Authorised for terminal entry - Gate In",
-        ], out / f"{name}.png", "Colombo Terminal Entry Permit")
-
-    def vgm_doc(name="vgm", container=None) -> None:
-        render("VERIFIED GROSS MASS (VGM)", [
-            f"Container No: {container or c}", f"Verified Gross Mass: {weight} kg",
-            "Method 1 - weighbridge   SOLAS VI/2 declaration", f"Date: {appt_date}",
-        ], out / f"{name}.png", "Weight Declaration")
-
-    def seal_doc(name="seal_photo", with_number=True) -> None:
-        lines = [f"Container No: {c}"] + ([f"Seal No: {s.seal}"] if with_number else [])
-        render("CONTAINER SEAL CHECK", lines + ["Seal intact - photographed at stuffing yard"], out / f"{name}.png")
-
-    def driver_doc(name="driver_docs", complete=True) -> None:
-        lines = [f"Driving Licence No: {s.licence}"] if complete else []
-        lines += [f"Driver: {s.driver}"]
-        lines += [f"Vehicle Registration No: {s.plate}"] if complete else []
-        render("DRIVER AND VEHICLE DOCUMENTS", lines + ["Revenue Licence valid 2026"], out / f"{name}.png")
-
-    booking_doc()
-    render("CUSTOMS CLEARANCE DOCUMENT (CUSDEC)", [
-        f"Declaration No: CUS-2026-{s.booking_no[-6:]}", f"Customs Declaration - {s.cargo_category.title()}",
-        f"Exporter: {s.shipper}   Consignee: {s.consignee}", f"Goods: {s.goods}", f"HS Code: {s.hs}   Duty: LKR 0.00",
-        f"Container: {c}   Date: {appt_date}",
-    ], out / "cusdec.png", "Sri Lanka Customs")
-    gate_pass_doc()
-    vgm_doc()
-    seal_doc()
-    driver_doc()
-    _special_cargo(s, out, appt_date)
-    for slot, what in s.problems:
-        name = f"{SLOT_FILES[slot]}__PROBLEM_{what}"
-        if slot == "vgm":
-            vgm_doc(name, container=base.OTHER_CONTAINER)
-        elif slot == "gate_pass" and what == "expired":
-            gate_pass_doc(name, valid=("2019-12-30 09:00", "2020-01-01 12:00"))
-        elif slot == "gate_pass" and what == "blurry":
-            gate_pass_doc("_tmp")
-            from PIL import Image
-
-            base.blur_and_noise(Image.open(out / "_tmp.png"), out / f"{name}.png")
-            (out / "_tmp.png").unlink()
-        elif slot == "seal_match":
-            seal_doc(name, with_number=False)
-        elif slot == "driver_docs":
-            driver_doc(name, complete=False)
-
-
-def write_documents(s: Scenario, out: Path, appt_date: str, style: str = "real") -> None:
-    out.mkdir(parents=True, exist_ok=True)
-    (write_documents_real if style == "real" else write_documents_simple)(s, out, appt_date)
 
     required = 7 if s.container_type in ("reefer", "hazardous") else 6
     lines = [
@@ -319,7 +227,6 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--out", default=str(ROOT / "sample_documents" / "appointments"))
     p.add_argument("--date", default=(date.today() + timedelta(days=1)).isoformat(), help="appointment date (default tomorrow)")
-    p.add_argument("--style", choices=("real", "simple"), default="real", help="real form layouts (default) or one-line text")
     p.add_argument("--book", action="store_true", help="also book the three appointments through the running backend")
     p.add_argument("--approve", action="store_true", help="with --book: approve them so document upload is open")
     p.add_argument("--url", default="http://127.0.0.1:8000")
@@ -327,10 +234,10 @@ def main() -> int:
 
     out = Path(args.out)
     for s in SCENARIOS:
-        write_documents(s, out / s.key, args.date, args.style)
+        write_documents(s, out / s.key, args.date)
         n = len(list((out / s.key).glob("*.png")))
         print(f"{s.key:<12} {s.title}: {n} documents in {out / s.key}")
-    print(f"Documents are dated {args.date} ({args.style} layouts).")
+    print(f"Documents are dated {args.date}.")
     if args.book:
         print("Booking:")
         for s in SCENARIOS:

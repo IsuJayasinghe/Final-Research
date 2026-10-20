@@ -1,10 +1,13 @@
 """
 Draw the six pre-clearance documents in the layout of the real forms (grids, tables, check boxes, numbered cards).
 
-The simple generator (make_sample_documents.py) writes one line of "Label: value" text per field. Real documents are
-laid out differently: a label in one cell and its value in the cell below or beside it, a table row of weights, a
-ticked check box, a numbered driving licence card. These renderers reproduce those layouts so the layout-aware OCR
-reader (layout.py) can be demonstrated and tested.
+This is the only document generator. Real documents are laid out as grids: a label in one cell and its value in the
+cell below or beside it, a table row of weights, a ticked check box, a numbered driving licence card. These renderers
+reproduce those layouts so the layout-aware OCR reader (layout.py) can be demonstrated and tested.
+
+Each renderer can leave named details out (`omit=`), so a document that is incomplete in a known way can be made.
+The special cargo certificate (dangerous goods declaration or reefer pre-trip certificate) has no real sample, so
+it is drawn as a plain titled card.
 
 All names, numbers and parties are made up, and no real company logo or photograph is drawn.
 """
@@ -17,12 +20,24 @@ import zlib
 from datetime import date, timedelta
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from tools import make_sample_documents as base  # noqa: E402
+from documents import iso6346_check_digit  # noqa: E402
+
+OTHER_CONTAINER = "MSKU" + "123456" + str(iso6346_check_digit("MSKU123456"))  # a valid container that is not the booked one
+
+_REGULAR = [r"C:\Windows\Fonts\arial.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/System/Library/Fonts/Supplemental/Arial.ttf"]
+_BOLD = [r"C:\Windows\Fonts\arialbd.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/System/Library/Fonts/Supplemental/Arial Bold.ttf"]
+
+
+def _font(size: int, bold: bool = False):
+    for p in _BOLD if bold else _REGULAR:
+        if Path(p).exists():
+            return ImageFont.truetype(p, size)
+    return ImageFont.load_default(size=size)
 
 NAVY, BLUE, GREY, LINE = "#123a5c", "#1f5fa8", "#555555", "#444444"
 LINE_NAME = "ORIENT PACIFIC LINES (SRI LANKA) (PVT) LTD"
@@ -36,7 +51,7 @@ class Sheet:
         self.w, self.h = w, h
 
     def text(self, x, y, s, size=26, bold=False, fill="black", anchor="la"):
-        self.d.text((x, y), s, font=base._font(size, bold), fill=fill, anchor=anchor)
+        self.d.text((x, y), s, font=_font(size, bold), fill=fill, anchor=anchor)
 
     def box(self, x0, y0, x1, y1, width=2, outline=LINE, fill=None):
         self.d.rectangle([x0, y0, x1, y1], outline=outline, width=width, fill=fill)
@@ -81,7 +96,8 @@ def _d(text: str, days: int = 0) -> str:
 
 # ------------------------------------------------------------------------------------ 1. booking confirmation
 
-def booking_confirmation(s, out: Path, name: str, appt_date: str, container: str | None = None) -> None:
+def booking_confirmation(s, out: Path, name: str, appt_date: str, container: str | None = None, omit: tuple = ()) -> None:
+    """omit: any of 'voyage', 'port_of_discharge', 'etd' leaves that row off the form."""
     c = container or s.container
     sh = Sheet(950, 940)
     sh.d.polygon([(70, 60), (100, 30), (130, 60), (100, 90)], fill=BLUE)
@@ -109,6 +125,8 @@ def booking_confirmation(s, out: Path, name: str, appt_date: str, container: str
         ("Vessel", s.vessel), ("Voyage No.", s.voyage), ("Port of Loading", "Colombo, Sri Lanka (CMB)"),
         ("Port of Discharge", s.pod), ("Sailing Date (ETD)", appt_date), ("Arrival Date (ETA)", _d(appt_date, 3)),
     ]
+    skip = {"voyage": "Voyage No.", "port_of_discharge": "Port of Discharge", "etd": "Sailing Date (ETD)"}
+    rows = [r for r in rows if r[0] not in {skip[k] for k in omit}]
     for i, (label, value) in enumerate(rows):
         sh.text(55, 392 + i * 32, label, 23)
         sh.text(255, 392 + i * 32, f": {value}", 23)
@@ -138,7 +156,8 @@ def booking_confirmation(s, out: Path, name: str, appt_date: str, container: str
 
 # --------------------------------------------------------------------------------------------- 2. CUSDEC
 
-def cusdec(s, out: Path, name: str, appt_date: str) -> None:
+def cusdec(s, out: Path, name: str, appt_date: str, omit: tuple = ()) -> None:
+    """omit: any of 'declaration_no', 'hs_code', 'goods' leaves that box empty."""
     sh = Sheet(900, 950)
     sh.d.ellipse([40, 40, 130, 130], outline=NAVY, width=3)
     sh.text(85, 85, "SL", 30, True, NAVY, anchor="mm")
@@ -161,7 +180,7 @@ def cusdec(s, out: Path, name: str, appt_date: str) -> None:
     sh.vline(480, 615, 790, 1)
     sh.vline(660, 700, 790, 1)
     L = 20
-    sh.cell(30, 175, "1. Declaration No.", f"CUS-2026-{s.booking_no[-6:]}", L, 20)
+    sh.cell(30, 175, "1. Declaration No.", "" if "declaration_no" in omit else f"CUS-2026-{s.booking_no[-6:]}", L, 20)
     sh.cell(315, 175, "2. Date of Declaration", appt_date, L, 20)
     sh.cell(550, 175, "3. Customs Office", "COLOMBO", L, 20)
     sh.cell(30, 262, "4. Importer", s.consignee, L, 20)
@@ -179,8 +198,8 @@ def cusdec(s, out: Path, name: str, appt_date: str) -> None:
     sh.cell(390, 552, "14. Marks & Numbers", "N/M", L, 20)
     sh.cell(30, 622, "15. Total Packages", "100 Drums" if s.container_type == "hazardous" else "1,200 Cartons", L, 20)
     sh.cell(490, 622, "16. Gross Weight (KGS)", s.weight_kg, L, 19)
-    sh.cell(30, 707, "17. Goods Description", s.goods, L, 20)
-    sh.cell(490, 707, "18. HS Code", s.hs, L, 20)
+    sh.cell(30, 707, "17. Goods Description", "" if "goods" in omit else s.goods, L, 20)
+    sh.cell(490, 707, "18. HS Code", "" if "hs_code" in omit else s.hs, L, 20)
     sh.cell(668, 707, "19. Customs Value (LKR)", "3,500,000.00", L, 17)
     sh.text(30, 804, "I declare that the particulars given", 16, fill=GREY)
     sh.text(30, 826, "in this declaration are true and complete.", 16, fill=GREY)
@@ -245,9 +264,10 @@ def gate_pass(s, out: Path, name: str, appt_date: str, valid=("06:00", "18:00"),
 
 # ------------------------------------------------------------------------------------------------ 4. VGM
 
-def vgm(s, out: Path, name: str, appt_date: str, container: str | None = None, method: str = "1", tare: int | None = None) -> None:
+def vgm(s, out: Path, name: str, appt_date: str, container: str | None = None, method: str = "1", tare: int | None = None, gross: int | None = None) -> None:
     c = container or s.container
-    gross = int(s.weight_kg.replace(",", ""))
+    gross = gross if gross is not None else int(s.weight_kg.replace(",", ""))
+    own_tare = s.tare_kg if gross > s.tare_kg else gross // 4
     sh = Sheet(1000, 920)
     sh.text(500, 30, LINE_NAME, 26, True, anchor="ma")
     sh.text(500, 64, "No. 45, Layards Road, Colombo 05, Sri Lanka", 21, anchor="ma")
@@ -271,7 +291,7 @@ def vgm(s, out: Path, name: str, appt_date: str, container: str | None = None, m
         sh.vline(x, 390, 480, 1)
     for x, label in zip(cols, ["Container No.", "Size/Type", "Cargo Description", "Tare (kg)", "Cargo (kg)", "VGM (kg)"]):
         sh.text(x + 8, 400, label, 17, True)
-    for x, value in zip(cols, [c, "40' HC", s.goods[:18], f"{(tare if tare is not None else s.tare_kg):,}", f"{gross - s.tare_kg:,}", f"{gross:,}"]):
+    for x, value in zip(cols, [c, "40' HC", s.goods[:18], f"{(tare if tare is not None else own_tare):,}", f"{gross - own_tare:,}", f"{gross:,}"]):
         sh.text(x + 8, 445, value, 20, True)
     sh.text(80, 510, "Weighing Method", 24, True)
     for i, (key, label) in enumerate([("1", "Method 1 - Weighing of packed container"), ("2", "Method 2 - Weighing of cargo and adding tare weight")]):
@@ -378,6 +398,34 @@ def driver_card(s, out: Path, name: str, appt_date: str, complete: bool = True, 
         y += 34
     sh.qr(565, 520, 126, seed=zlib.crc32(s.plate.encode()) & 0xFF)
     sh.save(out / f"{name}.png")
+
+
+def special_cargo(s, out: Path, name: str, appt_date: str, omit: tuple = ()) -> None:
+    """Dangerous goods declaration (hazardous) or reefer pre-trip certificate (reefer): a plain titled card, because
+    no real sample of this form was available. omit: 'un_number', 'packing_group' (hazardous)."""
+    c = s.container
+    if s.container_type == "hazardous":
+        lines = [s.cargo_note[0] if s.cargo_note else "IMDG Class 3 - Flammable liquid"]
+        if "un_number" not in omit and "packing_group" not in omit:
+            lines.append("UN Number: UN 1203   Packing Group II")
+        elif "un_number" not in omit:
+            lines.append("UN Number: UN 1203")
+        elif "packing_group" not in omit:
+            lines.append("Packing Group II")
+        lines += [f"Container: {c}", "Hazard label displayed on all four sides"]
+        title = "DANGEROUS GOODS DECLARATION"
+    else:
+        lines = [f"Container: {c}", "Refrigerated container - Set Point: +12 C", f"Pre-trip inspection completed {appt_date}", "Temperature recorder calibrated"]
+        title = "REEFER PRE-TRIP INSPECTION CERTIFICATE"
+    img = Image.new("RGB", (1100, 160 + 62 * len(lines) + 60), "white")
+    d = ImageDraw.Draw(img)
+    d.rectangle([20, 20, img.width - 20, img.height - 20], outline=NAVY, width=3)
+    d.text((50, 45), title, font=_font(44, True), fill=NAVY)
+    y = 130
+    for line in lines:
+        d.text((60, y), line, font=_font(34), fill="black")
+        y += 62
+    img.save(out / f"{name}.png")
 
 
 def blur(path: Path, out_path: Path) -> None:
