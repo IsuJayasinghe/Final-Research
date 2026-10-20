@@ -560,6 +560,16 @@ export default function DocumentUpload() {
               format={(v) => `${Math.round(v)} min`}
             />
           </div>
+          {outcome.cross_checks?.length > 0 && (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+              <p className="font-semibold">Please confirm: the documents disagree with each other</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                {outcome.cross_checks.map((c) => (
+                  <li key={c.code}>{c.message}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           {outcome.vessel && outcome.vessel.delayed !== null && (
             <p className="mt-3 text-xs text-gray-700">
               <b>Vessel {outcome.vessel.vessel}</b> (read from your booking confirmation):{' '}
