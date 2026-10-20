@@ -86,26 +86,7 @@ Bookings are sent through the real API, so risk, overbooking and lane choice all
 rest wait for the gate admin. In the app, switch to **Gate admin**, open **Approvals** and press *Approve all low-risk*.
 The busiest hour shows on **Gate Status**.
 
-**b) Sample documents for the OCR demo (one booking, made-up data, 21 PNG files):**
-```bash
-python tools/make_sample_documents.py
-```
-They are written to `backend/gate/sample_documents/` (git-ignored) and are dated for **tomorrow**. A different date can
-be passed as the second argument: `python tools/make_sample_documents.py sample_documents 2026-10-20`.
-The booking you upload them for must use the **same date** and these exact values:
-
-| Field | Value |
-|---|---|
-| Truck ID | `TRK-80579` |
-| Container ID | `CSQU3054383` |
-| Carrier | `Carrier-B` |
-| Container type | Hazardous (so the special cargo document is required) |
-
-Good set: `booking_confirmation`, `cusdec`, `gate_pass`, `vgm`, `seal_photo`, `driver_docs`, `special_cargo`.
-Problem files to show failures: `vgm_wrong_container`, `gate_pass_expired`, `gate_pass_blurry`, `wrong_document`,
-`seal_missing`, `*_incomplete`, `cusdec_high_risk`, `booking_confirmation_delayed_vessel`.
-
-**c) Three different appointments for the OCR demo (recommended):**
+**b) Three different appointments for the OCR demo:**
 ```bash
 python tools/make_demo_appointments.py --book --approve
 ```
@@ -113,8 +94,8 @@ This writes a separate set of made-up documents for each of three appointments, 
 forms** (grids, tables, a ticked check box, a numbered driving licence card; no real logos or photos), into
 `backend/gate/sample_documents/appointments/`, books the three through the running backend, and approves them so
 document upload is open. Without `--book` it only writes the files. Other options: `--date YYYY-MM-DD` (default
-tomorrow; the documents are dated for it), `--out DIR`, `--url http://127.0.0.1:8000`, and `--style simple` for the older
-one-line "Label: value" documents.
+tomorrow; the documents are dated for it), `--out DIR`, `--url http://127.0.0.1:8000`.
+This is the only document generator: every document is drawn in the real form layouts.
 Each folder also has a `README.txt` with its booking and what to expect.
 
 | | 1_clean | 2_hazardous | 3_reefer |
@@ -142,7 +123,7 @@ How to demo one appointment:
 The numbers in the last table row come from one run and can change slightly with the date and the weather forecast.
 The three appointments are in `tests/test_demo_appointments.py`, so any change that breaks this demo fails the tests.
 
-**d) Your own real documents.** The OCR reads the layouts of real photographed forms, not only the generated ones: a
+**c) Your own real documents.** The OCR reads the layouts of real photographed forms, not only the generated ones: a
 booking confirmation, a customs declaration (CUSDEC) with numbered boxes, a terminal gate pass with a grid and barcode,
 a VGM declaration with a weights table and tick boxes, a container and seal verification report, and a driving licence
 with the vehicle registration certificate (JPG, PNG or PDF; see "How the OCR reads real forms" in `README.md`). To try
@@ -154,18 +135,21 @@ a set of your own:
 3. After *Submit documents* any detail that disagrees between documents (for example a different booking number on the
    VGM and the booking confirmation) is listed under "Please confirm".
 Photographs should be flat, sharp and well lit. Names are shown as the OCR returned them, often without spaces.
-The special cargo certificate (hazardous or reefer bookings only) still uses the simple generated layout, because no
-real sample of it was available.
+The special cargo certificate (hazardous or reefer bookings only) is drawn as a plain titled card, because no real
+sample of it was available.
 
-**e) Resetting.** With no database, a backend restart clears all bookings. Seed again after restarting.
+**d) Resetting.** With no database, a backend restart clears all bookings. Seed again after restarting.
 
 ## 5. A 10 minute walkthrough
 
 1. **Driver** mode: Gate Status, pick tomorrow, *Show busiest hour* (congested), then pick a quiet hour.
-2. Request Appointment with the values above. The request shows "waiting for the gate admin".
+2. Request Appointment with the hazardous appointment's values (`TRK-81002`, `HLCU2745198`, Carrier-B, hazardous,
+   import, tomorrow 10:00; see section 4b). The request shows "waiting for the gate admin".
+   (If you ran `make_demo_appointments.py --book --approve`, these three bookings already exist: skip to step 4.)
 3. Upload Documents is locked. Switch to **Gate admin**, open Approvals and approve the request.
-4. Back to **Driver**: My Trip shows the approval. Upload the 7 good documents and submit.
-5. Upload `vgm_wrong_container.png` first to show a document being flagged.
+4. Back to **Driver**: My Trip shows the approval. Upload `vgm__PROBLEM_wrong_container.png` first to show a document
+   being flagged, then the 7 good documents from `sample_documents/appointments/2_hazardous/`, and submit.
+5. Compare with `1_clean` and `3_reefer`: customs risk, vessel delay and risk differ because the documents differ.
 6. **Gate admin**: Gate Allocation, close the driver's gate for 3 hours ("crane breakdown"). Slot Optimization, inject a
    4 hour vessel delay and an 80% queue spike.
 7. **Driver**: My Trip shows the new gate, the longer wait and the reasons under Updates.
