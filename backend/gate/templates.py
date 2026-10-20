@@ -56,6 +56,27 @@ def _not_expired(value, ctx) -> str | None:
     return None
 
 
+def _pass_started(value, ctx) -> str | None:
+    expected = ctx.get("expected_date")
+    if expected and value > expected:
+        return f"The pass is only valid from {value}, after the appointment date ({expected})."
+    return None
+
+
+def _same_day(value, ctx) -> str | None:
+    expected = ctx.get("expected_date")
+    if expected and value != expected:
+        return f"The pass is for {value}, but the appointment is on {expected}."
+    return None
+
+
+def _licence_valid(value, ctx) -> str | None:
+    expected = ctx.get("expected_date")
+    if expected and value < expected:
+        return f"The driving licence expires on {value}, before the appointment date ({expected})."
+    return None
+
+
 def _imdg_class(value, ctx) -> str | None:
     if not str(value).split(".")[0] in {str(n) for n in range(1, 10)}:
         return f"IMDG class '{value}' is not valid (must be 1-9)."
@@ -93,6 +114,8 @@ TEMPLATES: dict[str, DocumentTemplate] = {
             FieldSpec("port_of_discharge", "Port of discharge", "e.g. Port of Discharge: Singapore"),
             FieldSpec("dates", "Sailing date (ETD)", "a date such as ETD: 2026-10-15"),
             FieldSpec("shipper", "Shipper", "the exporting company", required=False),
+            FieldSpec("eta", "Arrival date (ETA)", "e.g. Arrival Date (ETA): 2026-10-24", required=False),
+            FieldSpec("seal_number", "Seal number", "the seal in the container table", required=False),
         ),
     ),
     "cusdec": DocumentTemplate(
@@ -107,6 +130,8 @@ TEMPLATES: dict[str, DocumentTemplate] = {
             FieldSpec("consignee", "Consignee", "the receiving party"),
             _CONTAINER,
             FieldSpec("dates", "Declaration date", "a date on the declaration"),
+            FieldSpec("importer", "Importer", "the importing party", required=False),
+            FieldSpec("vessel_name", "Vessel", "e.g. 10. Vessel / Voyage", required=False),
         ),
     ),
     "gate_pass": DocumentTemplate(
@@ -114,14 +139,23 @@ TEMPLATES: dict[str, DocumentTemplate] = {
         "Gate Pass",
         "Terminal-issued entry permit for the truck and container",
         (
-            FieldSpec("truck_id", "Truck ID", "e.g. Truck: TRK-80579"),
-            FieldSpec("plate", "Vehicle registration", "e.g. Vehicle No: WP CAB-1234"),
+            FieldSpec("truck_id", "Truck ID", "e.g. Truck No: TRK-80579"),
             _CONTAINER,
             FieldSpec(
-                "valid_until", "Valid until", "the date the pass expires", validator=_not_expired,
+                "valid_until", "Valid until", "the date the pass expires (Valid To)", validator=_not_expired,
                 invalid_code="pass_expired",
             ),
-            FieldSpec("valid_from", "Valid from", "the date the pass starts", required=False),
+            FieldSpec(
+                "valid_from", "Valid from", "the date the pass starts", required=False, validator=_pass_started,
+                invalid_code="pass_not_yet_valid",
+            ),
+            FieldSpec(
+                "appointment_date", "Appointment date", "e.g. Appointment Date: 2026-10-21", required=False,
+                validator=_same_day, invalid_code="appointment_date_mismatch",
+            ),
+            FieldSpec("gate_pass_no", "Gate pass number", "the pass reference", required=False),
+            FieldSpec("driver_name", "Driver name", "the driver named on the pass", required=False),
+            FieldSpec("plate", "Vehicle registration", "e.g. Vehicle No: WP CAB-1234", required=False),
         ),
     ),
     "vgm": DocumentTemplate(
@@ -134,9 +168,10 @@ TEMPLATES: dict[str, DocumentTemplate] = {
                 "weight_kg", "Verified gross mass (kg)", "e.g. Verified Gross Mass: 24,350 kg",
                 validator=_weight_in_range, missing_code="weight_missing", invalid_code="weight_range",
             ),
-            FieldSpec("method", "Weighing method", "Method 1 or Method 2 (SOLAS VI/2)", validator=_method),
+            FieldSpec("method", "Weighing method", "the ticked method, 1 or 2 (SOLAS VI/2)", validator=_method),
             FieldSpec("dates", "Date of weighing", "a date on the declaration"),
             FieldSpec("signatory", "Authorised signatory", "who signed the declaration", required=False),
+            FieldSpec("shipper", "Shipper", "the company declaring the weight", required=False),
         ),
     ),
     "seal_match": DocumentTemplate(
@@ -156,6 +191,11 @@ TEMPLATES: dict[str, DocumentTemplate] = {
             FieldSpec("driver_name", "Driver name", "e.g. Driver: K. Perera"),
             FieldSpec("licence_no", "Driving licence number", "e.g. Driving Licence No: B1234567"),
             FieldSpec("plate", "Vehicle registration", "e.g. Vehicle Registration No: WP CAB-1234"),
+            FieldSpec(
+                "licence_expiry", "Licence valid until", "the licence expiry date (field 4b)", required=False,
+                validator=_licence_valid, invalid_code="licence_expired",
+            ),
+            FieldSpec("vehicle_owner", "Vehicle owner", "the owner on the registration certificate", required=False),
         ),
     ),
     "special_cargo": DocumentTemplate(

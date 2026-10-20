@@ -17,9 +17,10 @@ from __future__ import annotations
 
 import re
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
+import layout
 from templates import VGM_MAX_KG, VGM_MIN_KG, evaluate_template  # noqa: F401 (VGM limits re-exported)
 
 MAX_BYTES = 8 * 1024 * 1024
@@ -80,6 +81,8 @@ class OcrResult:
     lines: int
     pages: int
     engine: str  # "ocr" or "pdf-text"
+    items: list = field(default_factory=list)  # OCR boxes with positions (layout.Item), empty for a PDF text layer
+    image: object = None  # the page image, for reading check boxes (single images only)
 
 
 class DocumentError(ValueError):
@@ -116,15 +119,15 @@ def ocr_available() -> bool:
         return False
 
 
-def _ocr_image(image) -> tuple[list[str], list[float]]:
+def _ocr_image(image, y_offset: float = 0.0) -> tuple[list[str], list[float], list]:
     import numpy as np
 
     arr = np.asarray(image.convert("RGB"))
     with _engine_lock:
         result, _ = _get_engine()(arr)
     if not result:
-        return [], []
-    return [r[1] for r in result], [float(r[2]) for r in result]
+        return [], [], []
+    return [r[1] for r in result], [float(r[2]) for r in result], layout.items_from_ocr(result, y_offset)
 
 
 def read_document(data: bytes, filename: str) -> OcrResult:
@@ -144,6 +147,8 @@ def read_document(data: bytes, filename: str) -> OcrResult:
 
     texts: list[str] = []
     confs: list[float] = []
+    items: list = []
+    page_image = None
     pages = 1
     engine = "ocr"
 
@@ -165,9 +170,10 @@ def read_document(data: bytes, filename: str) -> OcrResult:
             else:  # scanned PDF: render and OCR
                 pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
                 img = Image.open(io.BytesIO(pix.tobytes("png")))
-                t, c = _ocr_image(img)
+                t, c, it = _ocr_image(img, y_offset=i * 10_000)
                 texts.extend(t)
                 confs.extend(c)
+                items.extend(it)
     else:
         try:
             img = Image.open(io.BytesIO(data))
@@ -176,13 +182,18 @@ def read_document(data: bytes, filename: str) -> OcrResult:
             raise DocumentError("Could not read this image file.") from e
         if max(img.size) > 2200:
             img.thumbnail((2200, 2200))
-        t, c = _ocr_image(img)
+        t, c, it = _ocr_image(img)
         texts.extend(t)
         confs.extend(c)
+        items.extend(it)
+        page_image = img.convert("RGB")
 
     text = "\n".join(texts)
     confidence = sum(confs) / len(confs) if confs else 0.0
-    return OcrResult(text=text, confidence=round(confidence, 3), lines=len(confs), pages=pages, engine=engine)
+    return OcrResult(
+        text=text, confidence=round(confidence, 3), lines=len(confs), pages=pages, engine=engine,
+        items=items, image=page_image,
+    )
 
 
 # ------------------------------------------------------------------ ISO 6346
@@ -217,39 +228,29 @@ def normalise_container(code: str | None) -> str:
 # ---------------------------------------------------------------- extraction
 
 _DIGIT_FIX = str.maketrans({"O": "0", "I": "1", "L": "1", "S": "5", "B": "8", "Z": "2", "Q": "0"})
-_CONTAINER_RE = re.compile(r"\b([A-Z]{3}[UJZ])[\s\-]?([0-9OILSBZQ]{6})[\s\-]?([0-9OILSBZQ])\b")
-_DATE_ISO = re.compile(r"\b(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})\b")
-_DATE_DMY = re.compile(r"\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})\b")
+_ALPHA_FIX = str.maketrans({"0": "O", "1": "I", "5": "S", "8": "B", "2": "Z"})  # digits misread in the owner code
+_CONTAINER_RE = re.compile(r"\b([A-Z0-9]{3}[UJZ])[\s\-]?([0-9OILSBZQ]{6})[\s\-]?([0-9OILSBZQ])\b")
 
 
 def find_container_numbers(text: str) -> list[str]:
     found = []
     for m in _CONTAINER_RE.finditer(text.upper()):
         digits = (m.group(2) + m.group(3)).translate(_DIGIT_FIX)  # repair O/0, I/1 ... in the numeric part
-        code = m.group(1) + digits
+        owner = m.group(1)[:3].translate(_ALPHA_FIX) + m.group(1)[3]  # ... and 0/O, 1/I in the three-letter owner code
+        if not owner[:3].isalpha():
+            continue
+        code = owner + digits
         if code not in found:
             found.append(code)
     return found
 
 
 def _parse_dates(text: str) -> list[str]:
-    out = []
-    for m in _DATE_ISO.finditer(text):
-        y, mo, d = map(int, m.groups())
-        out.append((y, mo, d))
-    for m in _DATE_DMY.finditer(text):
-        d, mo, y = map(int, m.groups())
-        out.append((y, mo, d))
-    iso = []
-    for y, mo, d in out:
-        try:
-            iso.append(datetime(y, mo, d).strftime("%Y-%m-%d"))
-        except ValueError:
-            continue
-    return list(dict.fromkeys(iso))
+    return layout.parse_dates(text)
 
 
 def extract_fields(text: str) -> dict:
+    text = layout.unglue(text)
     upper = text.upper()
     fields: dict = {}
 
@@ -312,8 +313,8 @@ def extract_fields(text: str) -> dict:
 
     # ---- further details the document templates ask for
     for key, label, stop in (
-        ("port_of_loading", r"PORT\s+OF\s+LOADING", r"PORT\s+OF\s+DISCHARGE"),
-        ("port_of_discharge", r"PORT\s+OF\s+DISCHARGE", r"ETD|ETA|SHIPPER"),
+        ("port_of_loading", r"PORT\s*OF\s*LOADING", r"PORT\s*OF\s*DISCHARGE"),
+        ("port_of_discharge", r"PORT\s*OF\s*DISCHARGE", r"ETD|ETA|SHIPPER"),
         ("shipper", r"SHIPPER", ""),
         ("exporter", r"EXPORTER", r"CONSIGNEE"),
         ("consignee", r"CONSIGNEE", ""),
@@ -324,7 +325,7 @@ def extract_fields(text: str) -> dict:
         if value:
             fields[key] = value
 
-    for key, label in (("valid_from", r"VALID\s+FROM"), ("valid_until", r"VALID\s+(?:UNTIL|TILL|TO)")):
+    for key, label in (("valid_from", r"VALID\s*FROM"), ("valid_until", r"VALID\s*(?:UNTIL|TILL|TO)")):
         m = re.search(label + r"\s*[:\-]?\s*([0-9]{1,4}[-/.][0-9]{1,2}[-/.][0-9]{1,4})", upper)
         parsed = _parse_dates(m.group(1)) if m else []
         if parsed:
@@ -352,6 +353,19 @@ def extract_fields(text: str) -> dict:
     dates = _parse_dates(text)
     if dates:
         fields["dates"] = dates
+    return fields
+
+
+def merge_layout(fields: dict, ocr: OcrResult, doc_key: str | None = None) -> dict:
+    """Add what the OCR boxes say about forms and tables (see layout.py). Where the layout found a value it wins,
+    because it knows which cell the value was in; the text patterns stay as the fallback."""
+    if not ocr.items:
+        return fields
+    for key, value in layout.extract(ocr.items, ocr.image, doc_key).items():
+        if key == "method" and value is None:
+            fields.pop("method", None)  # both methods are listed and the ticked box cannot be told
+        elif value not in (None, "", []):
+            fields[key] = value
     return fields
 
 
@@ -409,7 +423,13 @@ def assess_customs_risk(fields: dict) -> dict:
 def classify(text: str, fields: dict | None = None) -> dict[str, int]:
     """Score every document type for this text."""
     lower = re.sub(r"\s+", " ", text.lower())
-    scores = {key: sum(w for phrase, w in phrases if phrase in lower) for key, phrases in KEYWORDS.items()}
+    compact = re.sub(r"[^a-z0-9]", "", lower)  # OCR of photographed forms often drops the spaces
+
+    def hit(phrase: str) -> bool:
+        squeezed = re.sub(r"[^a-z0-9]", "", phrase)
+        return phrase in lower or (len(squeezed) >= 8 and squeezed in compact)
+
+    scores = {key: sum(w for phrase, w in phrases if hit(phrase)) for key, phrases in KEYWORDS.items()}
     fields = fields if fields is not None else extract_fields(text)
     if fields.get("container_numbers"):
         scores["seal_match"] += 3  # a container code is the core of a container/seal photo
@@ -457,6 +477,14 @@ def validate(doc_key: str, text: str, fields: dict, scores: dict, ocr_conf: floa
         if not valid_container_number(code):
             issues.append(_issue("warning", "check_digit", f"Container number {code} fails the ISO 6346 check digit - confirm it was read correctly."))
 
+    if doc_key == "seal_match" and len(fields.get("seal_candidates", [])) > 1:
+        issues.append(_issue("error", "seal_mismatch", f"The seal number differs inside this document ({' vs '.join(fields['seal_candidates'])}); the table and the seal photo must agree."))
+
+    if doc_key == "vgm" and all(fields.get(k) for k in ("tare_kg", "cargo_kg", "weight_kg")):
+        expected_gross = fields["tare_kg"] + fields["cargo_kg"]
+        if abs(expected_gross - fields["weight_kg"]) > max(50, 0.01 * fields["weight_kg"]):
+            issues.append(_issue("error", "vgm_arithmetic", f"Tare {fields['tare_kg']:,} kg + cargo {fields['cargo_kg']:,} kg = {expected_gross:,} kg, but the verified gross mass says {fields['weight_kg']:,} kg."))
+
     if doc_key == "gate_pass":
         expected_truck = (ctx.get("expected_truck_id") or "").upper().replace(" ", "")
         if expected_truck and fields.get("truck_id") and fields["truck_id"] != expected_truck:
@@ -464,6 +492,10 @@ def validate(doc_key: str, text: str, fields: dict, scores: dict, ocr_conf: floa
         expected_date = ctx.get("expected_date")
         if expected_date and fields.get("dates") and expected_date not in fields["dates"]:
             issues.append(_issue("warning", "date_mismatch", f"Gate pass date ({', '.join(fields['dates'])}) differs from the appointment date ({expected_date})."))
+        expected_time = ctx.get("expected_time")
+        start, end = fields.get("valid_from_time"), fields.get("valid_until_time")
+        if expected_time and start and end and not start <= expected_time <= end:
+            issues.append(_issue("warning", "outside_pass_window", f"Your slot ({expected_time}) is outside the pass window ({start} to {end})."))
     return issues
 
 
@@ -471,7 +503,7 @@ def template_issues(template: dict) -> list[dict]:
     """Errors for every REQUIRED detail of the template that is missing or invalid."""
     issues = []
     for item in template["fields"]:
-        if not item["required"] or item["status"] == "ok":
+        if item["status"] == "ok" or (not item["required"] and item["status"] == "missing"):
             continue
         if item["status"] == "missing":
             code = item["missing_code"] or f"missing_{item['key']}"
@@ -496,6 +528,39 @@ def check_issues(doc_key: str, text: str, fields: dict, scores: dict, ocr_conf: 
     return issues, template
 
 
+def cross_check(results: dict) -> list[dict]:
+    """Details that must agree ACROSS the uploaded documents. These are warnings: one document may simply be wrong or
+    misread, so the driver is told to confirm, not blocked. `results` maps a slot to its check_document() result."""
+
+    def get(doc: str, key: str):
+        return ((results.get(doc) or {}).get("fields") or {}).get(key)
+
+    def squeeze(v) -> str:
+        return re.sub(r"[^A-Z0-9]", "", str(v).upper())
+
+    out: list[dict] = []
+
+    def compare(doc_a: str, key_a: str, doc_b: str, key_b: str, code: str, what: str) -> None:
+        a, b = get(doc_a, key_a), get(doc_b, key_b)
+        if a and b and squeeze(a) != squeeze(b):
+            out.append(_issue(
+                "warning", code,
+                f"{what} differs: {a} on the {DOCUMENT_LABELS[doc_a]} but {b} on the {DOCUMENT_LABELS[doc_b]}.",
+            ))
+
+    compare("booking_confirmation", "booking_no", "vgm", "booking_no", "booking_no_differs", "The booking number")
+    compare("booking_confirmation", "seal_number", "seal_match", "seal_number", "seal_differs", "The seal number")
+    compare("booking_confirmation", "vessel_name", "cusdec", "vessel_name", "vessel_differs", "The vessel")
+    compare("booking_confirmation", "voyage", "cusdec", "voyage", "voyage_differs", "The voyage")
+    # the driver on the gate pass ("N.M. Fernando") against the licence ("NIROSHAN MADUSANKA FERNANDO"): surname must appear
+    pass_name, licence_name = get("gate_pass", "driver_name"), get("driver_docs", "driver_name")
+    if pass_name and licence_name:
+        surname = squeeze(re.split(r"[.\s]+", pass_name.strip())[-1])
+        if len(surname) >= 3 and surname not in squeeze(licence_name):
+            out.append(_issue("warning", "driver_differs", f"The driver on the Gate Pass ({pass_name}) does not match the driving licence ({licence_name})."))
+    return out
+
+
 def required_documents(container_type: str | None) -> list[str]:
     return BASE_DOCUMENTS + (["special_cargo"] if container_type in ("reefer", "hazardous") else [])
 
@@ -506,7 +571,7 @@ def check_document(data: bytes, filename: str, doc_key: str, ctx: dict | None = 
         raise DocumentError(f"Unknown document slot '{doc_key}'.")
     ctx = ctx or {}
     ocr = read_document(data, filename)
-    fields = extract_fields(ocr.text)
+    fields = merge_layout(extract_fields(ocr.text), ocr, doc_key)
     scores = classify(ocr.text, fields)
 
     if not ocr.text.strip() or ocr.confidence < MIN_OCR_CONFIDENCE:

@@ -100,12 +100,12 @@ completeness score; a document is `cleared` only when every required detail is p
 
 | Document | Required details (optional in brackets) |
 |---|---|
-| Booking confirmation | booking no., container, vessel, voyage, port of loading, port of discharge, sailing date (shipper) |
-| CUSDEC | declaration no., HS code, goods description, exporter, consignee, container, date |
-| Gate pass | truck ID, vehicle registration, container, valid-until not before the appointment date (valid-from) |
-| VGM | container, weight 1,000-40,000 kg, method 1 or 2, date of weighing (signatory) |
+| Booking confirmation | booking no., container, vessel, voyage, port of loading, port of discharge, sailing date (shipper, ETA, seal) |
+| CUSDEC | declaration no., HS code, goods description, exporter, consignee, container, date (importer, vessel) |
+| Gate pass | truck ID, container, valid-to not before the appointment date (valid-from not after it, appointment date, gate pass no., driver, vehicle registration) |
+| VGM | container, weight 1,000-40,000 kg, ticked method 1 or 2, date of weighing (signatory, shipper) |
 | Container and seal | container, seal number |
-| Driver and vehicle | driver name, licence number, vehicle registration |
+| Driver and vehicle | driver name, licence number, vehicle registration (licence expiry, which must not be before the appointment date; vehicle owner) |
 | Special cargo | hazardous: container, UN number, IMDG class 1-9, packing group; reefer: container, set point -40 to 30 C (pre-trip inspection) |
 
 Adding a document type or a required detail is one entry in `TEMPLATES`. Cross-checks against the booking (container
@@ -113,11 +113,38 @@ mismatch, wrong truck, wrong document type, low OCR quality) stay in `documents.
 the templates. `GET /api/documents/templates?container_type=` returns the templates for the UI, each upload returns its
 `template` checklist, and the submission stores per-document completeness and the missing details.
 
+## Reading real form layouts (`layout.py`)
+Real terminal and shipping forms are grids: a label in one cell and its value in the cell beside or below it, a table
+row of weights, a ticked check box, a numbered driving licence card. The OCR engine returns every cell as a text box
+with a position, and `layout.py` reads those boxes:
+
+- **Labels are matched loosely**: spaces, case, a field number (`13.`, `S.`) and OCR typos are ignored (`Vestel` is read
+  as `Vessel`, `4.lmporter` as `Importer`).
+- **A value is** the text after the label in the same box, else the next box on the same row, else the box(es) below it
+  in the same column. A neighbour that is itself a label is never taken as a value, and a wrapped value stops when the
+  text under it is not tight against it or is read with low confidence.
+- **Repairs**: `2026-10-2106:00` is split into a date and a time; `SL1234S67` becomes `SL1234567`; `WPTRK-80579`
+  becomes `WP TRK-80579`; `3.900` (a comma read as a full stop) becomes 3,900; `O0LU...` becomes `OOLU...` in the
+  container owner code; a vessel read without spaces (`MAERSKCOLOMBO`) is restored to the known vessel name.
+- **VGM table**: tare, cargo and gross mass are read from the container's row, and tare + cargo must equal the gross
+  mass. **Check boxes**: of the two listed weighing methods, the one whose box has more ink is the ticked one; when it
+  cannot be told, the method is reported missing instead of guessed.
+- **Driving licence card**: the numbered fields (1 surname, 2 given names, 4b expiry, 5 licence number); the expiry must
+  not be before the appointment date. If the surname's number was not read, the box above the given names is used.
+- **Checks inside one document**: two different seal numbers (table vs photo), tare + cargo not equal to the gross
+  mass, a gate pass for another day, a slot outside the pass's time window (warning).
+- **Checks across documents** (`documents.cross_check`, shown as "please confirm" warnings on submit, never blocking):
+  booking number, seal, vessel and voyage between the booking confirmation and the VGM / seal report / CUSDEC, and the
+  driver on the gate pass against the driving licence.
+
+Where the layout reader finds a value it overrides the plain-text patterns, which remain the fallback (digital PDFs
+have no boxes). Names read without spaces stay as the OCR returned them.
+
 ## OCR document checking (`documents.py`)
 Uploads are read with **RapidOCR** (ONNX, pip-only - no Tesseract install); digital PDFs use their text
 layer, scanned PDFs are rendered then OCR'd. Each file then goes through:
 1. **classify** into one of the 7 slots (booking confirmation, CUSDEC, gate pass, VGM, container/seal, driver and
-   vehicle, special cargo) with weighted keywords;
+   vehicle, special cargo) with weighted keywords (spaces are ignored, because photographed forms lose them);
 2. **extract** container number (ISO 6346 check digit, O/0-style OCR repair), seal, VGM weight, booking no., truck,
    plate, licence, UN number, set-point temperature, dates;
 3. **validate** against the booking: container must match, truck/date on the gate pass, VGM weight plausible

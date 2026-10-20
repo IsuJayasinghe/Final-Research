@@ -34,11 +34,21 @@ DEMO_SCHEDULE = {
     "MV LANKA EXPRESS": 0.0,
     "MV OCEAN PIONEER": 5.0,
     "MV PACIFIC STAR": 3.0,
+    "MAERSK COLOMBO": 0.0,
 }
 
 
+def _compact(name: str) -> str:
+    return re.sub(r"[^A-Z0-9]", "", re.sub(r"^(?:MV|M/V|MS)\b\.?\s*", "", name.upper()))
+
+
 def normalise_vessel(name: str | None) -> str:
-    return re.sub(r"\s+", " ", (name or "").upper()).strip()
+    """Upper-case, single spaces; a name the OCR read without spaces ("MAERSKCOLOMBO") is restored to the known name."""
+    cleaned = re.sub(r"\s+", " ", (name or "").upper()).strip()
+    for known in DEMO_SCHEDULE:
+        if cleaned and _compact(cleaned) == _compact(known):
+            return known
+    return cleaned
 
 
 def _simulated(vessel: str, day: str) -> float:

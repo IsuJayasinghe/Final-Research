@@ -109,10 +109,12 @@ Problem files to show failures: `vgm_wrong_container`, `gate_pass_expired`, `gat
 ```bash
 python tools/make_demo_appointments.py --book --approve
 ```
-This writes a separate set of made-up documents for each of three appointments into
+This writes a separate set of made-up documents for each of three appointments, **drawn in the layout of the real
+forms** (grids, tables, a ticked check box, a numbered driving licence card; no real logos or photos), into
 `backend/gate/sample_documents/appointments/`, books the three through the running backend, and approves them so
 document upload is open. Without `--book` it only writes the files. Other options: `--date YYYY-MM-DD` (default
-tomorrow; the documents are dated for it), `--out DIR`, `--url http://127.0.0.1:8000`.
+tomorrow; the documents are dated for it), `--out DIR`, `--url http://127.0.0.1:8000`, and `--style simple` for the older
+one-line "Label: value" documents.
 Each folder also has a `README.txt` with its booking and what to expect.
 
 | | 1_clean | 2_hazardous | 3_reefer |
@@ -124,7 +126,7 @@ Each folder also has a `README.txt` with its booking and what to expect.
 | Vessel (read by OCR) | MV EVER GRACE, on time | MV OCEAN PIONEER, **delayed 5 h** | MV PACIFIC STAR, **delayed 3 h** |
 | Documents needed | 6 | 7 (dangerous goods declaration) | 7 (reefer certificate) |
 | Faulty files to try first | none | `vgm__PROBLEM_wrong_container`, `gate_pass__PROBLEM_expired` | `seal_photo__PROBLEM_no_seal_number`, `driver_docs__PROBLEM_incomplete`, `gate_pass__PROBLEM_blurry` |
-| Result after fixing and submitting | no-show risk 6%, clearance 9 min | no-show risk 21%, clearance 32 min | no-show risk 9%, clearance 29 min |
+| Result after fixing and submitting | no-show risk 8%, clearance 8 min | no-show risk 22%, clearance 31 min | no-show risk 11%, clearance 30 min |
 
 How to demo one appointment:
 1. In **Driver** mode open **My Trip** (or Upload Documents) and enter the truck ID, for example `TRK-81002`.
@@ -140,7 +142,22 @@ How to demo one appointment:
 The numbers in the last table row come from one run and can change slightly with the date and the weather forecast.
 The three appointments are in `tests/test_demo_appointments.py`, so any change that breaks this demo fails the tests.
 
-**d) Resetting.** With no database, a backend restart clears all bookings. Seed again after restarting.
+**d) Your own real documents.** The OCR reads the layouts of real photographed forms, not only the generated ones: a
+booking confirmation, a customs declaration (CUSDEC) with numbered boxes, a terminal gate pass with a grid and barcode,
+a VGM declaration with a weights table and tick boxes, a container and seal verification report, and a driving licence
+with the vehicle registration certificate (JPG, PNG or PDF; see "How the OCR reads real forms" in `README.md`). To try
+a set of your own:
+1. Make a booking whose **truck ID, container ID and date** are the ones printed on the documents (for example truck
+   `TRK-80579`, container `MAEU3483419`, the appointment date on the gate pass), then approve it as gate admin.
+2. In Upload Documents, upload each file into its slot. The container, the date and the pass's validity window are
+   checked against the booking. A slot outside the pass's time window is a warning, not an error.
+3. After *Submit documents* any detail that disagrees between documents (for example a different booking number on the
+   VGM and the booking confirmation) is listed under "Please confirm".
+Photographs should be flat, sharp and well lit. Names are shown as the OCR returned them, often without spaces.
+The special cargo certificate (hazardous or reefer bookings only) still uses the simple generated layout, because no
+real sample of it was available.
+
+**e) Resetting.** With no database, a backend restart clears all bookings. Seed again after restarting.
 
 ## 5. A 10 minute walkthrough
 
