@@ -300,6 +300,7 @@ class GateService:
                 expected_container_id=appointment.container_id,
                 expected_truck_id=appointment.truck_id,
                 expected_date=slot.strftime("%Y-%m-%d"),
+                expected_time=slot.strftime("%H:%M"),
                 container_type=appointment.container_type,
             )
         result = documents.check_document(data, filename, doc_key, ctx)
@@ -467,6 +468,7 @@ class GateService:
             "vessel": vessel_info,
             "drivers": after_risk["drivers"],
             "issues": issues,
+            "cross_checks": documents.cross_check(results),
         }
 
     # -- lifecycle --------------------------------------------------------
