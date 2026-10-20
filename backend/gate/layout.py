@@ -223,7 +223,7 @@ def _below(items: list[Item], label: Item, max_lines: int) -> list[Item]:
         below = [
             i for i in items
             if i is not last and i not in out and i.y0 >= last.y1 - 0.35 * last.h and same_column(i, label)
-            and i.y0 - last.y1 <= (2.6 if first else 0.3) * last.h  # a wrapped line sits right under the previous one
+            and i.y0 - last.y1 <= (1.6 if first else 0.3) * last.h  # a wrapped line sits right under the previous one
             and (first or i.conf >= 0.7)
         ]
         if not below:
