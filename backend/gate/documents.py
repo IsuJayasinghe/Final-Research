@@ -174,6 +174,8 @@ def read_document(data: bytes, filename: str) -> OcrResult:
                 texts.extend(t)
                 confs.extend(c)
                 items.extend(it)
+                if pages == 1:
+                    page_image = img.convert("RGB")  # a one-page scan: kept so a ticked check box can be read
     else:
         try:
             img = Image.open(io.BytesIO(data))
@@ -274,7 +276,7 @@ def extract_fields(text: str) -> dict:
     if m:
         fields["truck_id"] = re.sub(r"\s", "", m.group(1)).replace("TRK", "TRK-").replace("--", "-")
 
-    m = re.search(r"\b([A-Z]{2,3}[\s\-][A-Z]{2,3}[\s\-]\d{4}|[A-Z]{2,3}[\s\-]\d{4})\b", upper)
+    m = re.search(r"\b([A-Z]{2,3}[\s\-][A-Z]{2,3}[\s\-]\d{4})\b", upper)  # province + letters + digits, e.g. WP CAB-1234
     if m and re.search(r"VEHICLE|REGISTRATION|PLATE|REG\.?\s*NO", upper):
         fields["plate"] = m.group(1)
 
@@ -349,6 +351,12 @@ def extract_fields(text: str) -> dict:
 
     if re.search(r"PRE[\s\-]?TRIP", upper):
         fields["pre_trip_inspection"] = True
+
+    for key, label in (("etd", r"(?:ETD|SAILING\s*DATE)"), ("eta", r"(?:ETA|ARRIVAL\s*DATE)")):
+        m = re.search(label + r"[^0-9\n]{0,12}(\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4})", upper)
+        parsed = _parse_dates(m.group(1)) if m else []
+        if parsed:
+            fields[key] = parsed[0]
 
     dates = _parse_dates(text)
     if dates:

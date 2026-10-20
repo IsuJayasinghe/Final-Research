@@ -179,13 +179,9 @@ SLOTS = {
 
 @pytest.fixture(scope="module")
 def sample_dir(tmp_path_factory):
-    from tools import make_sample_documents as gen
+    from doc_fixtures import make_samples
 
-    out = tmp_path_factory.mktemp("docs")
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(gen, "APPT_DATE", DATE)  # documents are dated for the appointment they are checked against
-        gen.main(out)
-    return out
+    return make_samples(tmp_path_factory.mktemp("docs"), DATE)  # documents are dated for the appointment they are checked against
 
 
 def doc_booking(svc, **kw):

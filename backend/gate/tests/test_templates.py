@@ -10,7 +10,7 @@ CTX = {"expected_container_id": CONTAINER, "expected_truck_id": "TRK-80579", "ex
 COMPLETE = {
     "booking_confirmation": {
         "booking_no": "BKG-77201944", "container_numbers": [CONTAINER], "vessel_name": "MV EVER GRACE", "voyage": "042E",
-        "port_of_loading": "Colombo", "port_of_discharge": "Singapore", "dates": ["2026-10-15"],
+        "port_of_loading": "Colombo", "port_of_discharge": "Singapore", "etd": "2026-10-15",
     },
     "cusdec": {
         "declaration_no": "CUS-2026-558120", "hs_code": "2710.19", "goods_description": "Petroleum oils",
@@ -157,11 +157,10 @@ ocr = pytest.mark.skipif(not docs.ocr_available(), reason="rapidocr_onnxruntime 
 
 @pytest.fixture(scope="module")
 def samples(tmp_path_factory):
-    from tools import make_sample_documents as gen
+    from doc_fixtures import make_samples
 
-    out = tmp_path_factory.mktemp("tpl_samples")
-    gen.main(out)
-    return out, gen.APPT_DATE
+    day = CTX["expected_date"]
+    return make_samples(tmp_path_factory.mktemp("tpl_samples"), day), day
 
 
 def verdict(samples, name, slot, container_type="hazardous"):

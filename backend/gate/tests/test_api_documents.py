@@ -23,13 +23,9 @@ def client():
 
 @pytest.fixture(scope="module")
 def sample_dir(tmp_path_factory):
-    from tools import make_sample_documents as gen
+    from doc_fixtures import make_samples
 
-    out = tmp_path_factory.mktemp("api_docs")
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(gen, "APPT_DATE", "2031-03-10")  # the date of the booking made in the full-flow test
-        gen.main(out)
-    return out
+    return make_samples(tmp_path_factory.mktemp("api_docs"), "2031-03-10")  # the date of the booking made in the full-flow test
 
 
 def post_doc(client, sample_dir, name, doc_key, **form):

@@ -112,7 +112,7 @@ TEMPLATES: dict[str, DocumentTemplate] = {
             FieldSpec("voyage", "Voyage number", "e.g. Voyage: 042E"),
             FieldSpec("port_of_loading", "Port of loading", "e.g. Port of Loading: Colombo"),
             FieldSpec("port_of_discharge", "Port of discharge", "e.g. Port of Discharge: Singapore"),
-            FieldSpec("dates", "Sailing date (ETD)", "a date such as ETD: 2026-10-15"),
+            FieldSpec("etd", "Sailing date (ETD)", "a date such as Sailing Date (ETD): 2026-10-15"),
             FieldSpec("shipper", "Shipper", "the exporting company", required=False),
             FieldSpec("eta", "Arrival date (ETA)", "e.g. Arrival Date (ETA): 2026-10-24", required=False),
             FieldSpec("seal_number", "Seal number", "the seal in the container table", required=False),

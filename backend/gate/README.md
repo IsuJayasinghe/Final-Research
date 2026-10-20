@@ -156,10 +156,11 @@ On **submit**, flagged or missing documents become the appointment's `missing_do
 clearance time are re-scored by the models, the extracted fields are saved to `gate.gate_submissions`, and the
 change is logged as a `DOCUMENTS_CHECKED` event. Files are processed in memory and never stored.
 
-Demo files: `python tools/make_sample_documents.py [dir] [YYYY-MM-DD]` writes good and faulty sample documents
-(git-ignored, dated tomorrow by default) for container `CSQU3054383`, truck `TRK-80579`, including customs
-declarations of low, medium, high and incomplete risk (`cusdec*.png`), a reefer certificate, and incomplete or expired
-variants (`*_incomplete.png`, `gate_pass_expired.png`) for the completeness checks.
+Demo files: `python tools/make_demo_appointments.py [--book --approve]` is the only document generator. It draws
+the documents of three different appointments (clean standard, hazardous with a delayed vessel, reefer with high customs
+scrutiny) in the layout of the real forms (`tools/real_format_documents.py`), plus faulty versions of some of them
+(`<slot>__PROBLEM_<what>.png`), into the git-ignored `sample_documents/appointments/`. The tests build their documents
+with the same generator (`tests/doc_fixtures.py`).
 
 ## Storage
 By default bookings live in memory. To save them in the shared PostgreSQL database:
