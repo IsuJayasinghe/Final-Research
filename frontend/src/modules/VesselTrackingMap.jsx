@@ -65,11 +65,18 @@ const portIcon = L.divIcon({
   popupAnchor: [0, -16]
 });
 
-export default function VesselTrackingMap({ onSelectVessel }) {
+export default function VesselTrackingMap({ onSelectVessel, onProceedToAllocation, initialVessel }) {
   const [fleet, setFleet] = useState(FALLBACK_FLEET);
-  const [selectedVessel, setSelectedVessel] = useState(FALLBACK_FLEET[0]);
+  const [selectedVessel, setSelectedVessel] = useState(initialVessel || FALLBACK_FLEET[0]);
   const [etaDetails, setEtaDetails] = useState(null);
   const [loadingEta, setLoadingEta] = useState(false);
+
+  // Sync selectedVessel if initialVessel prop changes from outside
+  useEffect(() => {
+    if (initialVessel && initialVessel.imo_number !== selectedVessel?.imo_number) {
+      setSelectedVessel(initialVessel);
+    }
+  }, [initialVessel]);
 
   // Fetch prediction details for selected vessel
   useEffect(() => {
@@ -93,10 +100,17 @@ export default function VesselTrackingMap({ onSelectVessel }) {
     return () => { isMounted = false; };
   }, [selectedVessel]);
 
-  const handleVesselClick = (vessel) => {
+  const handleSelectVessel = (vessel) => {
     setSelectedVessel(vessel);
     if (onSelectVessel) {
       onSelectVessel(vessel);
+    }
+  };
+
+  const handleProceedToAllocation = (vessel) => {
+    const target = vessel || selectedVessel;
+    if (onProceedToAllocation) {
+      onProceedToAllocation(target);
     }
   };
 
@@ -182,13 +196,16 @@ export default function VesselTrackingMap({ onSelectVessel }) {
                       weight: isSelected ? 2.5 : 1,
                       dashArray: isSelected ? '6, 6' : '3, 6'
                     }}
+                    eventHandlers={{
+                      click: () => handleSelectVessel(v)
+                    }}
                   />
 
                   <Marker
                     position={[v.latitude, v.longitude]}
                     icon={createShipIcon(v.status, v.cog || 0)}
                     eventHandlers={{
-                      click: () => handleVesselClick(v)
+                      click: () => handleSelectVessel(v)
                     }}
                   >
                     <Popup>
@@ -216,11 +233,11 @@ export default function VesselTrackingMap({ onSelectVessel }) {
 
                         <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
                           <button
-                            onClick={() => handleVesselClick(v)}
+                            onClick={() => handleProceedToAllocation(v)}
                             className="btn-primary"
                             style={{ width: '100%', fontSize: '0.75rem', padding: '0.45rem' }}
                           >
-                            Select for Dynamic Berth Match <ArrowRight size={14} />
+                            Proceed to Berth Allocation <ArrowRight size={14} />
                           </button>
                         </div>
                       </div>
@@ -343,7 +360,7 @@ export default function VesselTrackingMap({ onSelectVessel }) {
 
               {/* Quick Action Button */}
               <button 
-                onClick={() => handleVesselClick(selectedVessel)}
+                onClick={() => handleProceedToAllocation(selectedVessel)}
                 className="btn-primary" 
                 style={{ width: '100%', marginTop: 'auto' }}
               >

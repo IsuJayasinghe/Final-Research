@@ -59,6 +59,12 @@ export default function App() {
 
   const handleVesselSelectedFromMap = (vessel) => {
     setSelectedVesselForAllocation(vessel);
+  };
+
+  const handleProceedToAllocation = (vessel) => {
+    if (vessel) {
+      setSelectedVesselForAllocation(vessel);
+    }
     setActiveModule('allocation');
   };
 
@@ -251,7 +257,11 @@ export default function App() {
             </div>
 
             {/* Vessel Tracking GIS Module */}
-            <VesselTrackingMap onSelectVessel={handleVesselSelectedFromMap} />
+            <VesselTrackingMap 
+              initialVessel={selectedVesselForAllocation}
+              onSelectVessel={handleVesselSelectedFromMap}
+              onProceedToAllocation={handleProceedToAllocation}
+            />
 
             {/* Quick Link Banner to Allocation Wizard */}
             <div className="panel-card" style={{ padding: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(2, 132, 199, 0.08)' }}>
@@ -271,7 +281,11 @@ export default function App() {
         )}
 
         {activeModule === 'tracking' && (
-          <VesselTrackingMap onSelectVessel={handleVesselSelectedFromMap} />
+          <VesselTrackingMap 
+            initialVessel={selectedVesselForAllocation}
+            onSelectVessel={handleVesselSelectedFromMap}
+            onProceedToAllocation={handleProceedToAllocation}
+          />
         )}
 
         {activeModule === 'allocation' && (
