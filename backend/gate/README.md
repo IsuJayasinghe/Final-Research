@@ -22,7 +22,7 @@ runs the component standalone.
 | POST | `/api/appointments/{id}/approve` (`/confirm` alias) | Gate admin approves a PENDING request; this unlocks document upload |
 | POST | `/api/appointments/{id}/reject` | Gate admin rejects with a reason `{reason}` |
 | POST | `/api/appointments/{id}/cancel` | Driver or admin cancels (not once the truck is at the gate) |
-| GET | `/api/gates/{lane}/desk?date=` | One gate officer's work list: approved trucks on that gate in slot order, counts, queue, closures |
+| GET | `/api/gates/{lane}/desk?date=` | One gate officer's work list: approved trucks on that gate in slot order, counts, queue, closures; each booking carries a `document_summary` (every required document with status, file, details read, problems, and cross-document warnings) |
 | POST | `/api/appointments/{id}/check-in` | Officer: truck reached the gate (CONFIRMED -> ARRIVED) |
 | POST | `/api/appointments/{id}/complete` | Officer: gate process complete (ARRIVED or CONFIRMED -> COMPLETED), records how long it took |
 | POST | `/api/appointments/{id}/no-show` | Officer: truck never came (CONFIRMED -> NO_SHOW) |

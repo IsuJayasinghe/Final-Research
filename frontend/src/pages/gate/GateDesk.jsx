@@ -1,8 +1,9 @@
-import { CheckCircle2, Loader2, LogIn, RefreshCw, UserX } from 'lucide-react'
+import { CheckCircle2, ChevronDown, ChevronRight, Loader2, LogIn, RefreshCw, UserX } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { checkInAppointment, completeAppointment, getGateDesk, markNoShow } from '../../lib/gateApi'
 import { STATUS_LABEL, STATUS_STYLES, hhmm } from '../../lib/status'
+import BookingDetails from './BookingDetails'
 
 const GATES = [1, 2, 3, 4, 5, 6]
 
@@ -43,6 +44,7 @@ export default function GateDesk() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [busyId, setBusyId] = useState(null)
+  const [expanded, setExpanded] = useState({}) // booking id -> details shown
   const [lastUpdated, setLastUpdated] = useState(new Date())
 
   const load = useCallback(async () => {
@@ -198,8 +200,10 @@ export default function GateDesk() {
             <ul className="divide-y divide-gray-100">
               {desk.bookings.map((b) => {
                 const finished = b.status === 'COMPLETED' || b.status === 'NO_SHOW'
+                const shown = !!expanded[b.id]
                 return (
-                  <li key={b.id} className={`flex flex-wrap items-center justify-between gap-3 p-4 ${b.next_up ? 'bg-blue-50/60' : ''} ${finished ? 'opacity-70' : ''}`}>
+                  <li key={b.id} className={`${b.next_up ? 'bg-blue-50/60' : ''} ${finished ? 'opacity-70' : ''}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-3 p-4">
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-[#123a5c]">
                         {hhmm(b.assigned_slot)} · {b.truck_id} · {b.container_id}
@@ -210,10 +214,26 @@ export default function GateDesk() {
                         {!finished && <> · slot {when(b.minutes_to_slot)}</>}
                       </p>
                       <p className="mt-1 text-xs text-gray-600">
-                        Documents: <b className={b.docs_state === 'complete' ? 'text-green-700' : 'text-amber-700'}>{b.docs_state}</b>
+                        Documents:{' '}
+                        <b className={b.document_summary.cleared === b.document_summary.total ? 'text-green-700' : 'text-amber-700'}>
+                          {b.document_summary.cleared === b.document_summary.total
+                            ? 'all cleared'
+                            : b.document_summary.cleared === 0
+                              ? 'none uploaded'
+                              : `${b.document_summary.cleared} of ${b.document_summary.total} cleared`}
+                        </b>
                         {b.customs_risk_flag && <> · customs risk {b.customs_risk_flag}</>} · predicted clearance{' '}
                         {Math.round(b.predicted_clearance_minutes ?? 0)} min
                       </p>
+                      <button
+                        type="button"
+                        aria-expanded={shown}
+                        onClick={() => setExpanded((o) => ({ ...o, [b.id]: !o[b.id] }))}
+                        className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-[#123a5c] hover:underline"
+                      >
+                        {shown ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                        {shown ? 'Hide' : 'Show'} booking and documents ({b.document_summary.cleared}/{b.document_summary.total} cleared)
+                      </button>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[b.status]}`}>{STATUS_LABEL[b.status]}</span>
@@ -251,6 +271,8 @@ export default function GateDesk() {
                         </button>
                       )}
                     </div>
+                    </div>
+                    {shown && <BookingDetails b={b} />}
                   </li>
                 )
               })}

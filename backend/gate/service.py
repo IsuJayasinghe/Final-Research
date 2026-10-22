@@ -556,6 +556,40 @@ class GateService:
         self.repo.add_event(appointment_id, "NO_SHOW", a.assigned_slot, None, (note + " Truck did not arrive.").strip())
         return self.repo.get(appointment_id)
 
+    def document_summary(self, a: Appointment) -> dict:
+        """What the gate officer sees of a booking's uploaded documents: for every required document its status, the
+        file, how well it was read, the details found and the problems. (Only the verdicts are kept, never the files.)"""
+        results = self._doc_results.get(a.id, {})
+        rows = []
+        for key in documents.required_documents(a.container_type):
+            r = results.get(key)
+            if r is None:
+                rows.append({"doc_key": key, "label": documents.DOCUMENT_LABELS[key], "status": "missing", "details": [], "issues": []})
+                continue
+            template = r.get("template") or {}
+            rows.append(
+                {
+                    "doc_key": key,
+                    "label": documents.DOCUMENT_LABELS[key],
+                    "status": r["status"],
+                    "filename": r.get("filename"),
+                    "ocr_confidence": r.get("ocr_confidence"),
+                    "completeness": template.get("completeness"),
+                    "details": [
+                        {"label": f["label"], "value": f["value"], "status": f["status"], "required": f["required"]}
+                        for f in template.get("fields", [])
+                    ],
+                    "issues": [{"level": i["level"], "message": i["message"]} for i in r.get("issues", [])],
+                    "customs": r.get("customs_assessment"),
+                }
+            )
+        return {
+            "documents": rows,
+            "cleared": sum(1 for r in rows if r["status"] == "cleared"),
+            "total": len(rows),
+            "cross_checks": documents.cross_check(results),
+        }
+
     def gate_desk(self, lane: int, date: str | None = None, now: datetime | None = None) -> dict:
         """What one gate officer sees: every booking on this gate for the day, in slot order, with what to do next."""
         now = now or datetime.now()
@@ -579,6 +613,7 @@ class GateService:
                 "not uploaded" if a.missing_documents is None else "complete" if a.missing_documents == 0 else f"{a.missing_documents} missing"
             )
             d["minutes_to_slot"] = round((a.assigned_slot - now).total_seconds() / 60)
+            d["document_summary"] = self.document_summary(a)
             d["next_up"] = a.id == next_up
             bookings.append(d)
         closures = [
