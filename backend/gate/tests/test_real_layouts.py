@@ -69,6 +69,14 @@ def test_tare_cargo_and_gross_mass_are_read_from_the_container_row_and_must_add_
     assert (out["tare_kg"], out["cargo_kg"], out["weight_kg"]) == (3900, 20100, 24000)  # "3.900" is 3,900
 
 
+def test_a_number_stuck_to_the_end_of_a_description_is_still_read_from_the_weights_row():
+    items = [box("HLCU2745198", 107, 445, 140), box("Ceylon tea in bags3,900", 352, 445, 230), box("8,500", 653, 443, 60), box("12,400", 785, 443, 70)]
+    out = layout.extract(items, doc_key="vgm")
+    assert (out["tare_kg"], out["cargo_kg"], out["weight_kg"]) == (3900, 8500, 12400)
+    two = layout.extract([box("HLCU2745198", 107, 445, 140), box("8,500", 653, 443, 60), box("12,400", 785, 443, 70)], doc_key="vgm")
+    assert two["weight_kg"] == 12400 and "tare_kg" not in two  # the last column is the gross mass
+
+
 def test_licence_surname_is_taken_from_above_when_its_number_was_not_read():
     items = [box("DRIVINGLICENCE", 224, 40, 240), box("FERNANDO", 252, 103, 106), box("2.", 214, 135, 21), box("NIROSHANMADUSANKA", 254, 128, 220),
              box("5.", 215, 257, 19), box("B9123456", 255, 250, 111), box("4b.", 425, 191, 33), box("2029-03-10", 470, 185, 115)]

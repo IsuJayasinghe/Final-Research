@@ -291,7 +291,7 @@ def vgm(s, out: Path, name: str, appt_date: str, container: str | None = None, m
         sh.vline(x, 390, 480, 1)
     for x, label in zip(cols, ["Container No.", "Size/Type", "Cargo Description", "Tare (kg)", "Cargo (kg)", "VGM (kg)"]):
         sh.text(x + 8, 400, label, 17, True)
-    for x, value in zip(cols, [c, "40' HC", s.goods[:18], f"{(tare if tare is not None else own_tare):,}", f"{gross - own_tare:,}", f"{gross:,}"]):
+    for x, value in zip(cols, [c, "40' HC", s.goods[:15], f"{(tare if tare is not None else own_tare):,}", f"{gross - own_tare:,}", f"{gross:,}"]):
         sh.text(x + 8, 445, value, 20, True)
     sh.text(80, 510, "Weighing Method", 24, True)
     for i, (key, label) in enumerate([("1", "Method 1 - Weighing of packed container"), ("2", "Method 2 - Weighing of cargo and adding tare weight")]):

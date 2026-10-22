@@ -14,8 +14,13 @@ card; see real_format_documents.py). Every scenario folder holds the documents t
 checks fail, then replace them with the file of the same slot name. Each folder also has a README.txt with the booking
 to make and what to expect.
 
+Every run makes NEW values (truck IDs, container numbers, booking and seal numbers, drivers, goods, vessels), so each
+demo has different documents. What stays the same is each appointment's story: its goods fix the customs risk (low,
+medium, high), its vessel decides whether it is delayed, and its faulty files fail in the same way. The run prints the
+seed; `--seed N` makes exactly the same documents again, and `--fixed` uses the original fixed set.
+
 Usage:
-  python tools/make_demo_appointments.py [--out DIR] [--date YYYY-MM-DD]                          write the documents
+  python tools/make_demo_appointments.py [--out DIR] [--date YYYY-MM-DD] [--seed N | --fixed]   write the documents
   python tools/make_demo_appointments.py --book [--approve] [--url http://127.0.0.1:8000]       also book (and approve)
 
 Default output: backend/gate/sample_documents/appointments/ (git-ignored). All contents are made up.
@@ -23,6 +28,8 @@ Default output: backend/gate/sample_documents/appointments/ (git-ignored). All c
 
 import argparse
 import json
+import random
+import string
 import sys
 import urllib.error
 import urllib.request
@@ -33,12 +40,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from documents import iso6346_check_digit  # noqa: E402
+import vessels  # noqa: E402
+from documents import assess_customs_risk, iso6346_check_digit  # noqa: E402
 from tools import real_format_documents as real  # noqa: E402
 
 
 def container_number(prefix_and_serial: str) -> str:
-    """Owner code + serial number + the ISO 6346 check digit, e.g. 'MSCU538204' -> 'MSCU5382042'."""
+    """Owner code + serial number + the ISO 6346 check digit, e.g. 'MSCU538204' -> 'MSCU5382047'."""
     return prefix_and_serial + str(iso6346_check_digit(prefix_and_serial))
 
 
@@ -74,7 +82,6 @@ class Scenario:
     vehicle_type: str = "LORRY"
     cargo_note: list[str] = field(default_factory=list)  # lines of the special cargo document
     problems: list[tuple[str, str]] = field(default_factory=list)  # (slot, what the faulty file shows)
-    expect: list[str] = field(default_factory=list)
 
     @property
     def owner(self) -> str:
@@ -93,12 +100,6 @@ SCENARIOS = [
         weight_kg="18,900", shipper="LANKA TEXTILES EXPORT (PVT) LTD", consignee="NORDIC FASHION AB",
         pod="Gothenburg (SEGOT)", pod_address="Gothenburg 411 04", pod_country="SWEDEN",
         vehicle_make="ISUZU", vehicle_model="NPR 75",
-        expect=[
-            "all 6 required documents are cleared",
-            "customs risk: low (HS 6109.10, ordinary goods)",
-            "vessel MV EVER GRACE is on schedule: no vessel delay",
-            "no-show risk goes DOWN after submit; clearance time is shortest of the three",
-        ],
     ),
     Scenario(
         key="2_hazardous", title="Hazardous fuel import, delayed vessel", truck="TRK-81002",
@@ -113,14 +114,6 @@ SCENARIOS = [
             "Hazard label displayed on all four sides",
         ],
         problems=[("vgm", "wrong_container"), ("gate_pass", "expired")],
-        expect=[
-            "needs 7 documents (hazardous cargo adds the dangerous goods declaration)",
-            "vgm__PROBLEM_wrong_container: flagged, the container number does not match the booking",
-            "gate_pass__PROBLEM_expired: flagged, the permit is not valid on the appointment date",
-            "after replacing both: 7 of 7 cleared",
-            "customs risk: medium (HS 2710.19, mineral fuels)",
-            "vessel MV OCEAN PIONEER is delayed 5 h: raises the no-show risk (Carrier-B is also the least reliable carrier)",
-        ],
     ),
     Scenario(
         key="3_reefer", title="Reefer wine export, high customs scrutiny", truck="TRK-81003",
@@ -132,17 +125,112 @@ SCENARIOS = [
         vehicle_make="HINO", vehicle_model="FD 8J",
         cargo_note=["Refrigerated container - Set Point: +12 C", "Temperature recorder calibrated"],
         problems=[("seal_match", "no_seal_number"), ("driver_docs", "incomplete"), ("gate_pass", "blurry")],
-        expect=[
-            "needs 7 documents (the reefer certificate is the special cargo document)",
-            "seal_photo__PROBLEM_no_seal_number: flagged, a required detail (seal number) is missing",
-            "driver_docs__PROBLEM_incomplete: flagged, no licence number and no vehicle registration",
-            "gate_pass__PROBLEM_blurry: flagged, too blurry to be recognised as a gate pass (the system does not guess)",
-            "after replacing all three: 7 of 7 cleared",
-            "customs risk: high (HS 2204.21, alcohol is high-scrutiny goods)",
-            "vessel MV PACIFIC STAR is delayed 3 h",
-        ],
     ),
 ]
+
+# ----------------------------------------------------------------------------------------- fresh values each run
+
+OWNERS = ["MSCU", "HLCU", "OOLU", "TCLU", "MAEU", "CMAU", "TGHU", "SEGU", "GESU", "TRLU", "HAMU", "BMOU"]
+GIVEN = ["KASUN CHAMARA", "RUWAN PRASANNA", "MALITH DILSHAN", "SAMAN KUMARA", "NUWAN SAMPATH", "CHAMINDA ROSHAN",
+         "ANURA BANDARA", "LAKMAL SANJEEWA", "PRASAD MADUSHAN", "ISURU THARINDA"]
+SURNAMES = ["SILVA", "FERNANDO", "PERERA", "JAYAWARDENA", "WIJESINGHE", "DISSANAYAKE", "GUNASEKARA", "RATHNAYAKE"]
+VEHICLES = [("TATA", "LPT 1618"), ("ISUZU", "NPR 75"), ("HINO", "FD 8J"), ("MITSUBISHI", "FUSO FJ"), ("ASHOK LEYLAND", "BOSS 1114")]
+
+# (goods, HS code, shipper, consignee, port of discharge, address, country, [dangerous goods note lines])
+CLEAN_GOODS = [  # ordinary goods: low customs risk
+    ("Cotton T-shirts", "6109.10", "LANKA TEXTILES EXPORT (PVT) LTD", "NORDIC FASHION AB", "Gothenburg (SEGOT)", "Gothenburg 411 04", "SWEDEN"),
+    ("Ceylon tea in bags", "0902.30", "HIGHLAND TEA EXPORTERS (PVT) LTD", "LONDON TEA TRADERS LTD", "Felixstowe (GBFXT)", "Felixstowe IP11 3SY", "UNITED KINGDOM"),
+    ("Ceramic tiles", "6907.21", "ISLAND CERAMICS (PVT) LTD", "GULF BUILDING SUPPLIES LLC", "Jebel Ali (AEJEA)", "Dubai, UAE", "UNITED ARAB EMIRATES"),
+    ("Rubber gloves", "4015.19", "SERENDIB RUBBER PRODUCTS (PVT) LTD", "MEDI SUPPLY GMBH", "Hamburg (DEHAM)", "Hamburg 20457", "GERMANY"),
+]
+HAZARD_GOODS = [  # fuels and chemicals: medium customs risk
+    ("Petroleum oils", "2710.19", "CEYLON PETROCHEM TRADING (PVT) LTD", "GULF ENERGY SUPPLIES FZE", "Fujairah (AEFJR)", "Fujairah, UAE", "UNITED ARAB EMIRATES",
+     ["IMDG Class 3 - Flammable liquid", "UN Number: UN 1203   Packing Group II"]),
+    ("Methanol", "2905.11", "ISLAND CHEMICALS (PVT) LTD", "SOUTH ASIA SOLVENTS PTE LTD", "Singapore (SGP)", "Singapore 079903", "SINGAPORE",
+     ["IMDG Class 3 - Flammable liquid", "UN Number: UN 1230   Packing Group II"]),
+    ("Sodium hydroxide solution", "2815.12", "LANKA INDUSTRIAL CHEMICALS (PVT) LTD", "BAY CLEANING SUPPLIES LLC", "Jebel Ali (AEJEA)", "Dubai, UAE", "UNITED ARAB EMIRATES",
+     ["IMDG Class 8 - Corrosive", "UN Number: UN 1824   Packing Group II"]),
+    ("Acetone", "2914.11", "CEYLON SOLVENTS (PVT) LTD", "ORIENT COATINGS PTE LTD", "Port Klang (MYPKG)", "Port Klang 42000", "MALAYSIA",
+     ["IMDG Class 3 - Flammable liquid", "UN Number: UN 1090   Packing Group II"]),
+]
+REEFER_GOODS = [  # alcohol: high customs risk (goods, hs, shipper, consignee, pod, address, country, set point)
+    ("Wine in bottles", "2204.21", "HILL COUNTRY WINES (PVT) LTD", "ASIA BEVERAGE TRADING PTE LTD", "Singapore (SGP)", "Singapore 079903", "SINGAPORE", "+12 C"),
+    ("Whisky in cases", "2208.30", "CEYLON SPIRITS (PVT) LTD", "PACIFIC SPIRITS PTE LTD", "Singapore (SGP)", "Singapore 119962", "SINGAPORE", "+15 C"),
+    ("Beer in kegs", "2203.00", "ISLAND BREWERY (PVT) LTD", "MALDIVES BEVERAGES PVT LTD", "Male (MVMLE)", "Male 20026", "MALDIVES", "+4 C"),
+]
+
+
+def random_scenarios(seed: int) -> list[Scenario]:
+    """Three appointments with fresh values. The goods fix the customs risk, the vessel fixes the delay, and the faults
+    are the same as in the fixed set, so each appointment tells the same story with different documents."""
+    rng = random.Random(seed)
+    trucks = rng.sample(range(10000, 100000), 3)
+    hours = rng.sample(range(7, 19), 3)
+
+    def common(i: int) -> dict:
+        given, (make, model) = rng.choice(GIVEN), rng.choice(VEHICLES)
+        return dict(
+            truck=f"TRK-{trucks[i]}", hour=hours[i],
+            container=container_number(rng.choice(OWNERS) + f"{rng.randint(0, 999999):06d}"),
+            booking_no=f"OPLBK{rng.randint(0, 9999999):07d}", seal=f"SL{rng.randint(0, 999999):06d}",
+            voyage=f"{rng.randint(10, 260)}{rng.choice('EWNS')}", driver_given=given, driver_surname=rng.choice(SURNAMES),
+            licence=f"B{rng.randint(0, 9999999):07d}", vehicle_make=make, vehicle_model=model,
+            plate=f"{rng.choice(['WP', 'CP', 'SP', 'NW'])} {''.join(rng.choices(string.ascii_uppercase, k=3))}-{rng.randint(1000, 9999)}",
+        )
+
+    g = rng.choice(CLEAN_GOODS)
+    clean = Scenario(
+        key="1_clean", title="Clean standard export", carrier=rng.choice(["Carrier-A", "Carrier-D", "Carrier-E", "Carrier-J"]),
+        container_type="standard", cargo_category="export", vessel=rng.choice(["MV EVER GRACE", "MV LANKA EXPRESS", "MAERSK COLOMBO"]),
+        goods=g[0], hs=g[1], shipper=g[2], consignee=g[3], pod=g[4], pod_address=g[5], pod_country=g[6],
+        weight_kg=f"{rng.randrange(12000, 26000, 10):,}", **common(0),
+    )
+    g = rng.choice(HAZARD_GOODS)
+    hazardous = Scenario(
+        key="2_hazardous", title=f"Hazardous {g[0].lower()} import, delayed vessel", carrier="Carrier-B",
+        container_type="hazardous", cargo_category="import", vessel=rng.choice(["MV OCEAN PIONEER", "MV PACIFIC STAR"]),
+        goods=g[0], hs=g[1], shipper=g[2], consignee=g[3], pod=g[4], pod_address=g[5], pod_country=g[6],
+        cargo_note=g[7] + ["Hazard label displayed on all four sides"], weight_kg=f"{rng.randrange(18000, 27000, 10):,}",
+        problems=[("vgm", "wrong_container"), ("gate_pass", "expired")], **common(1),
+    )
+    g = rng.choice(REEFER_GOODS)
+    reefer = Scenario(
+        key="3_reefer", title=f"Reefer {g[0].lower()} export, high customs scrutiny", carrier=rng.choice(["Carrier-C", "Carrier-F", "Carrier-G"]),
+        container_type="reefer", cargo_category="export", vessel=rng.choice(["MV OCEAN PIONEER", "MV PACIFIC STAR"]),
+        goods=g[0], hs=g[1], shipper=g[2], consignee=g[3], pod=g[4], pod_address=g[5], pod_country=g[6], tare_kg=4600,
+        cargo_note=[f"Refrigerated container - Set Point: {g[7]}", "Temperature recorder calibrated"],
+        weight_kg=f"{rng.randrange(16000, 26000, 10):,}",
+        problems=[("seal_match", "no_seal_number"), ("driver_docs", "incomplete"), ("gate_pass", "blurry")], **common(2),
+    )
+    return [clean, hazardous, reefer]
+
+
+PROBLEM_TEXT = {
+    ("vgm", "wrong_container"): "vgm__PROBLEM_wrong_container: flagged, the container number does not match the booking",
+    ("gate_pass", "expired"): "gate_pass__PROBLEM_expired: flagged, the permit is not valid on the appointment date",
+    ("seal_match", "no_seal_number"): "seal_photo__PROBLEM_no_seal_number: flagged, a required detail (the seal number) is missing",
+    ("driver_docs", "incomplete"): "driver_docs__PROBLEM_incomplete: flagged, no licence number and no vehicle registration",
+    ("gate_pass", "blurry"): "gate_pass__PROBLEM_blurry: flagged, too blurry to be recognised as a gate pass (the system does not guess)",
+}
+
+
+def expectations(s: Scenario) -> list[str]:
+    """What the panel should see for this appointment, worked out from its own values."""
+    required = 7 if s.container_type in ("reefer", "hazardous") else 6
+    out = [f"needs {required} documents" + {"hazardous": " (the dangerous goods declaration is the seventh)",
+                                            "reefer": " (the reefer certificate is the seventh)"}.get(s.container_type, "")]
+    out += [PROBLEM_TEXT[p] for p in s.problems]
+    out.append(f"after replacing the faulty files: {required} of {required} cleared" if s.problems else f"all {required} documents are cleared")
+    risk = assess_customs_risk({"hs_code": s.hs, "declaration_no": "x"})
+    out.append(f"customs risk: {risk['level']} ({risk['reasons'][0]})")
+    delay = vessels.DEMO_SCHEDULE.get(s.vessel, 0.0)
+    line = (f"vessel {s.vessel} is delayed {delay:g} h: raises the no-show risk" if delay >= vessels.DELAY_THRESHOLD_H
+            else f"vessel {s.vessel} is on schedule: no vessel delay")
+    if s.carrier == "Carrier-B":
+        line += " (Carrier-B is also the least reliable carrier)"
+    out.append(line)
+    return out
+
 
 # upload slot -> file name (the slot names the document page uses)
 SLOT_FILES = {
@@ -195,7 +283,7 @@ def write_documents(s: Scenario, out: Path, appt_date: str) -> None:
     if s.problems:
         lines += ["", "Upload the PROBLEM files first, then replace each with the file of the same slot name:"]
         lines += [f"  {SLOT_FILES[slot]}__PROBLEM_{what}.png  ->  {SLOT_FILES[slot]}.png" for slot, what in s.problems]
-    lines += ["", "What you should see:"] + [f"  - {e}" for e in s.expect]
+    lines += ["", "What you should see:"] + [f"  - {e}" for e in expectations(s)]
     (out / "README.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -227,20 +315,28 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--out", default=str(ROOT / "sample_documents" / "appointments"))
     p.add_argument("--date", default=(date.today() + timedelta(days=1)).isoformat(), help="appointment date (default tomorrow)")
+    p.add_argument("--seed", type=int, help="repeat a previous run: the same values again (the seed is printed on every run)")
+    p.add_argument("--fixed", action="store_true", help="use the original fixed set (TRK-81001/2/3 ...) instead of new values")
     p.add_argument("--book", action="store_true", help="also book the three appointments through the running backend")
     p.add_argument("--approve", action="store_true", help="with --book: approve them so document upload is open")
     p.add_argument("--url", default="http://127.0.0.1:8000")
     args = p.parse_args()
 
     out = Path(args.out)
-    for s in SCENARIOS:
+    seed = args.seed if args.seed is not None else random.SystemRandom().randrange(1, 1_000_000)
+    scenarios = SCENARIOS if args.fixed else random_scenarios(seed)
+    for s in scenarios:
         write_documents(s, out / s.key, args.date)
         n = len(list((out / s.key).glob("*.png")))
         print(f"{s.key:<12} {s.title}: {n} documents in {out / s.key}")
-    print(f"Documents are dated {args.date}.")
+    print(f"Documents are dated {args.date}." + ("  Fixed set." if args.fixed else f"  Seed {seed} (--seed {seed} makes the same documents again)."))
+    print(f"\nBook these as the driver (Request Appointment) for {args.date}:")
+    print(f"  {'folder':<12} {'truck':<10} {'container':<12} {'carrier':<10} {'type':<10} {'cargo':<7} hour")
+    for s in scenarios:
+        print(f"  {s.key:<12} {s.truck:<10} {s.container:<12} {s.carrier:<10} {s.container_type:<10} {s.cargo_category:<7} {s.hour:02d}:00")
     if args.book:
         print("Booking:")
-        for s in SCENARIOS:
+        for s in scenarios:
             book(s, args.date, args.url, args.approve)
         if not args.approve:
             print("They are awaiting approval: switch to Gate admin > Approvals to approve them, then upload documents.")

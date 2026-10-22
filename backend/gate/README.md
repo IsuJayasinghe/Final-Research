@@ -158,7 +158,7 @@ change is logged as a `DOCUMENTS_CHECKED` event. Files are processed in memory a
 
 Demo files: `python tools/make_demo_appointments.py [--book --approve]` is the only document generator. It draws
 the documents of three different appointments (clean standard, hazardous with a delayed vessel, reefer with high customs
-scrutiny) in the layout of the real forms (`tools/real_format_documents.py`), plus faulty versions of some of them
+scrutiny), with new values on every run (`--seed N` repeats a run, `--fixed` is the original set), in the layout of the real forms (`tools/real_format_documents.py`), plus faulty versions of some of them
 (`<slot>__PROBLEM_<what>.png`), into the git-ignored `sample_documents/appointments/`. The tests build their documents
 with the same generator (`tests/doc_fixtures.py`).
 
