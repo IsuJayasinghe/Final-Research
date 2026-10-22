@@ -286,7 +286,15 @@ def parse_number(text: str) -> int | None:
 def row_numbers(items: list[Item], anchor: Item) -> list[int]:
     """Numbers to the right of `anchor` on its row, left to right (a table row such as tare / cargo / gross mass)."""
     row = sorted((i for i in items if i is not anchor and same_row(i, anchor) and i.x0 > anchor.x1 - 4), key=lambda i: i.x0)
-    return [n for n in (parse_number(i.text) for i in row) if n is not None]
+    numbers = []
+    for i in row:
+        n = parse_number(i.text)
+        if n is None:  # a long cargo description can run into the next cell: "Ceylon tea in bags3,900"
+            m = re.search(r"[A-Za-z)']\s*(\d{1,3}(?:[.,]\d{3})+|\d{3,6})$", i.text.strip())
+            n = parse_number(m.group(1)) if m else None
+        if n is not None:
+            numbers.append(n)
+    return numbers
 
 
 # ---------------------------------------------------------------------------------- check boxes / licence
@@ -439,8 +447,8 @@ def extract(items: list[Item], image=None, doc_key: str | None = None) -> dict:
         numbers = row_numbers(items, anchor) if anchor else []
         if len(numbers) >= 3:
             out["tare_kg"], out["cargo_kg"], out["weight_kg"] = numbers[-3:]
-        elif len(numbers) == 1:
-            out["weight_kg"] = numbers[0]
+        elif numbers:
+            out["weight_kg"] = numbers[-1]  # the last column of the row is the verified gross mass
         if has_method_choice(items):
             method = checked_method(items, image)
             out["method"] = method  # None when the ticked box cannot be told apart
