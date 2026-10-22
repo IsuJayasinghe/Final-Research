@@ -198,6 +198,9 @@ Interactive API docs: `http://127.0.0.1:8000/docs`.
 | Page says "Could not reach the gate appointment service" | The backend is not running, or it is not on port 8000 |
 | The browser shows CORS errors | The frontend is not on port 5173. Free that port or edit `allow_origins` in `main.py` |
 | `&&` is a parser error in PowerShell 5.1 | Put the commands on separate lines or separate them with `;` |
+| `pip`: "Fatal error in launcher: Unable to create process using C:\Python313\python.exe" | The `.venv` was copied from another computer and still points at that computer's Python. Delete it and make a new one: `Remove-Item .venv -Recurse -Force`, `python -m venv .venv`, then always run `.venv\\Scripts\\python.exe -m pip install -r requirements.txt` |
+| `No module named uvicorn` | `python` is a different Python from the one the packages were installed into. Run it through the venv: `.venv\\Scripts\\python.exe -m uvicorn main:app --port 8000`, and install with `python -m pip`, never plain `pip` |
+| Errors from `frontend` after copying the folder | Never copy `.venv` or `node_modules` between computers. Delete `frontend\\node_modules` and run `npm install` again |
 | Gate pass flagged as expired or the documents do not match | Regenerate the sample documents for the booking's date (section 4b) |
 | OCR returns 503 | `rapidocr_onnxruntime` or `pymupdf` did not install. Rerun `pip install -r requirements.txt` |
 | Slow seeding on Windows | Use `--url http://127.0.0.1:8000` (the default) |
