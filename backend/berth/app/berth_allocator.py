@@ -116,6 +116,50 @@ def check_time_window_conflict(
 
     return False, None
 
+def check_vessel_time_window_conflict(
+    conn: sqlite3.Connection,
+    vessel_imo: int,
+    start_dt: datetime,
+    end_dt: datetime,
+    exclude_booking_id: Optional[int] = None
+) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    """
+    Checks if a vessel (by IMO number) already has an active 'BOOKED' reservation
+    whose time window overlaps with [start_dt, end_dt].
+    Strict standard overlap logic: (New_Start < Existing_End) AND (New_End > Existing_Start).
+    """
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT booking_id, vessel_imo, vessel_name, berth_id, start_time, end_time, status
+        FROM berth_bookings
+        WHERE vessel_imo = ? AND status = 'BOOKED'
+    """, (vessel_imo,))
+    rows = cursor.fetchall()
+
+    for r in rows:
+        b_id = r[0]
+        if exclude_booking_id is not None and b_id == exclude_booking_id:
+            continue
+        try:
+            b_start = parse_iso_datetime(r[4])
+            b_end = parse_iso_datetime(r[5])
+        except Exception:
+            continue
+
+        # Standard time overlap: (New_Start < Existing_End) AND (New_End > Existing_Start)
+        if start_dt < b_end and end_dt > b_start:
+            conflict_info = {
+                "booking_id": b_id,
+                "vessel_imo": r[1],
+                "vessel_name": r[2],
+                "berth_id": r[3],
+                "start_time": r[4],
+                "end_time": r[5]
+            }
+            return True, conflict_info
+
+    return False, None
+
 def get_available_berths(
     length_m: float,
     draft_m: float,
@@ -226,7 +270,20 @@ def book_berth(
             f"Vessel draft ({draft_m}m) exceeds berth {berth_id} max draft ({berth['max_draft_m']}m)."
         )
 
-    # 3. Check time-window availability (prevent double-booking)
+    # 3. Check duplicate-booking / time-overlap for the same vessel (identified by IMO Number)
+    has_vessel_conflict, v_conflict = check_vessel_time_window_conflict(
+        conn=conn,
+        vessel_imo=vessel_imo,
+        start_dt=start_dt,
+        end_dt=end_dt
+    )
+    if has_vessel_conflict:
+        conn.close()
+        raise ValueError(
+            f"Validation Error: Vessel '{vessel_name}' (IMO {vessel_imo}) already has an active conflicting berth reservation at berth {v_conflict['berth_id']} from {v_conflict['start_time']} to {v_conflict['end_time']} during this time window."
+        )
+
+    # 4. Check time-window availability on the requested berth (prevent double-booking the berth)
     has_conflict, conflict_info = check_time_window_conflict(
         conn=conn,
         berth_id=berth_id,
@@ -431,3 +488,52 @@ def get_all_bookings(
     rows = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return rows
+
+def release_berth_booking(
+    booking_id: Optional[int] = None,
+    berth_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Releases an active booking record in berth_bookings, setting status to 'RELEASED'.
+    Frees up the berth immediately and updates port matrix occupancy.
+    """
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    ensure_berth_bookings_table(conn)
+    cursor = conn.cursor()
+
+    if booking_id is not None:
+        cursor.execute("SELECT * FROM berth_bookings WHERE booking_id = ?", (booking_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            raise ValueError(f"Booking ID #{booking_id} not found in database.")
+        booking = dict(row)
+        cursor.execute("UPDATE berth_bookings SET status = 'RELEASED' WHERE booking_id = ?", (booking_id,))
+    elif berth_id is not None:
+        cursor.execute(
+            "SELECT * FROM berth_bookings WHERE berth_id = ? AND status = 'BOOKED' ORDER BY booking_id DESC",
+            (berth_id,)
+        )
+        active_bookings = [dict(r) for r in cursor.fetchall()]
+        if not active_bookings:
+            conn.close()
+            raise ValueError(f"No active 'BOOKED' reservation found for berth '{berth_id}'.")
+        booking = active_bookings[0]
+        cursor.execute("UPDATE berth_bookings SET status = 'RELEASED' WHERE berth_id = ? AND status = 'BOOKED'", (berth_id,))
+    else:
+        conn.close()
+        raise ValueError("Either booking_id or berth_id must be provided to release a berth.")
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "status": "success",
+        "message": f"Berth {booking['berth_id']} successfully released from booking #{booking['booking_id']} ('{booking['vessel_name']}').",
+        "released_booking": {
+            **booking,
+            "status": "RELEASED"
+        }
+    }

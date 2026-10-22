@@ -65,9 +65,78 @@ body {
 
 /* Base Utility Classes */
 .command-container {
-  max-width: 1600px;
-  margin: 0 auto;
-  padding: 1.25rem 1.5rem 3rem 1.5rem;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 1.25rem 2rem 3rem 2rem;
+}
+
+/* Fluid Responsive Grid Utilities */
+.tracking-map-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  gap: 1.25rem;
+  height: 700px;
+  width: 100%;
+}
+
+.allocation-wizard-grid {
+  display: grid;
+  grid-template-columns: 380px minmax(0, 1fr);
+  gap: 1.25rem;
+  width: 100%;
+}
+
+.rescheduling-grid {
+  display: grid;
+  grid-template-columns: 420px minmax(0, 1fr);
+  gap: 1.25rem;
+  width: 100%;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  width: 100%;
+}
+
+.research-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+  width: 100%;
+}
+
+@media (max-width: 1200px) {
+  .metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1024px) {
+  .tracking-map-grid {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  .allocation-wizard-grid {
+    grid-template-columns: 1fr;
+  }
+  .rescheduling-grid {
+    grid-template-columns: 1fr;
+  }
+  .research-grid {
+    grid-template-columns: 1fr;
+  }
+  .command-container {
+    padding: 1rem 1rem 2rem 1rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .panel-card {

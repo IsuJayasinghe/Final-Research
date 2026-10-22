@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, Tooltip } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { 
   Navigation, 
@@ -65,6 +65,26 @@ const portIcon = L.divIcon({
   popupAnchor: [0, -16]
 });
 
+// Helper component to ensure Leaflet canvas scales fluidly across full screen widths and on window resize
+function MapResizeHandler() {
+  const map = useMap();
+  useEffect(() => {
+    map.invalidateSize();
+    const handleResize = () => {
+      map.invalidateSize();
+    };
+    window.addEventListener('resize', handleResize);
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 200);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      clearTimeout(timer);
+    };
+  }, [map]);
+  return null;
+}
+
 export default function VesselTrackingMap({ onSelectVessel, onProceedToAllocation, initialVessel }) {
   const [fleet, setFleet] = useState(FALLBACK_FLEET);
   const [selectedVessel, setSelectedVessel] = useState(initialVessel || FALLBACK_FLEET[0]);
@@ -115,7 +135,7 @@ export default function VesselTrackingMap({ onSelectVessel, onProceedToAllocatio
   };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '1.25rem', height: '680px' }}>
+    <div className="tracking-map-grid">
       {/* 1. Leaflet Interactive GIS Map Container */}
       <div className="panel-card" style={{ display: 'flex', flexDirection: 'column' }}>
         <div className="card-header">
@@ -144,6 +164,7 @@ export default function VesselTrackingMap({ onSelectVessel, onProceedToAllocatio
             scrollWheelZoom={true}
             style={{ width: '100%', height: '100%' }}
           >
+            <MapResizeHandler />
             {/* Dark Matter CartoDB Basemap tiles */}
             <TileLayer
               attribution='&copy; <a href="https://carto.com/">CARTO</a>'

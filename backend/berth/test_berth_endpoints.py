@@ -40,10 +40,38 @@ def run_tests():
     booking_id = book_resp['booking']['booking_id']
     print(f"Status: {book_resp['status']}, Booking ID: {booking_id}")
 
-    print("\n=== TEST 3: Preventing Double Booking ===")
+    print("\n=== TEST 3A: Preventing Duplicate Booking for Same Vessel (Different Berth) ===")
+    # Vessel 9776171 (OOCL HONG KONG) attempts to book another berth (CWIT_02) during overlapping time window
+    diff_berth_req = BookBerthRequest(
+        vessel_imo=9776171,
+        vessel_name="OOCL HONG KONG",
+        berth_id="CWIT_02",
+        start_time='2026-10-20T14:00:00Z',
+        end_time='2026-10-21T02:00:00Z',
+        length_m=340.0,
+        draft_m=14.0
+    )
     try:
-        book_berth_endpoint(book_req)
-        print("FAIL: Double-booking should not be allowed!")
+        book_berth_endpoint(diff_berth_req)
+        print("FAIL: Duplicate vessel booking across different berths should be rejected!")
+    except Exception as e:
+        status_code = getattr(e, 'status_code', None)
+        print(f"SUCCESS: Blocked with HTTP {status_code}: {getattr(e, 'detail', str(e))}")
+
+    print("\n=== TEST 3B: Preventing Berth Double-Booking by Another Vessel ===")
+    # Different vessel (BERGE STAHL) attempts to book first_berth during overlapping time window
+    berth_double_book_req = BookBerthRequest(
+        vessel_imo=8420804,
+        vessel_name="BERGE STAHL",
+        berth_id=first_berth['berth_id'],
+        start_time='2026-10-20T14:00:00Z',
+        end_time='2026-10-21T02:00:00Z',
+        length_m=340.0,
+        draft_m=12.8
+    )
+    try:
+        book_berth_endpoint(berth_double_book_req)
+        print("FAIL: Berth double-booking by another vessel should be rejected!")
     except Exception as e:
         status_code = getattr(e, 'status_code', None)
         print(f"SUCCESS: Blocked with HTTP {status_code}: {getattr(e, 'detail', str(e))}")

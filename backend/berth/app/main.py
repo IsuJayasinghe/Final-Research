@@ -13,7 +13,8 @@ try:
         book_berth,
         cancel_and_reassign_berth,
         get_all_bookings,
-        ensure_berth_bookings_table
+        ensure_berth_bookings_table,
+        release_berth_booking
     )
 except ImportError:
     from ml.prediction import predict_vessel_eta, assess_delay_risk, get_db_path
@@ -22,7 +23,8 @@ except ImportError:
         book_berth,
         cancel_and_reassign_berth,
         get_all_bookings,
-        ensure_berth_bookings_table
+        ensure_berth_bookings_table,
+        release_berth_booking
     )
 
 app = FastAPI(
@@ -201,15 +203,221 @@ def root():
             "available_berths": "GET /api/berths/available?length_m=300&draft_m=13&start_time=...&end_time=...",
             "book_berth": "POST /api/berths/book",
             "cancel_reassign": "POST /api/berths/cancel-reassign",
+            "release_berth": "POST /api/berths/{berth_id}/release",
+            "cancel_booking": "DELETE /api/berths/bookings/{booking_id}",
             "bookings": "GET /api/berths/bookings",
             "berths_list": "GET /api/berths",
             "berth_matrix": "GET /api/berths/matrix",
             "berth_detail": "GET /api/berths/{berth_id}",
             "sample_telemetry": "GET /api/vessels/sample",
+            "incoming_vessels": "GET /api/vessels",
             "health": "GET /api/health",
             "docs": "/docs"
         }
     }
+
+VESSEL_SPECIFIC_LENGTHS = {
+    9321483: 397.0,   # EMMA MAERSK
+    8420804: 342.0,   # BERGE STAHL
+    9690121: 292.0,   # VALIANT
+    9839179: 400.0,   # CMA CGM JACQUES SAADE
+    9776171: 399.9,   # OOCL HONG KONG
+    9811000: 399.9,   # EVER GIVEN
+    9839430: 399.9,   # MSC GÜLSÜN
+    9863297: 399.9,   # HMM ALGECIRAS
+    9769271: 400.0,   # MOL TRIUMPH
+    9795610: 400.0,   # COSCO SHIPPING UNIVERSE
+    9619907: 399.0,   # MAERSK MC-KINNEY MØLLER
+    9708679: 395.4,   # MSC MAYA
+    9488918: 362.0,   # ORE BRASIL / VALE BRASIL
+    9224752: 380.0,   # TI EUROPE
+    9775656: 183.0,   # STENA IMPERO
+    9168647: 182.7,   # STOLT COMMITMENT
+    9328951: 243.8,   # EAGLE S
+    9418063: 333.0,   # NISSOS RHENIA
+    9218124: 240.0,   # JOLLY TITANIO
+    9274168: 180.0,   # PACIFIC BASIN
+    9469362: 143.0,   # BBC EUROPE
+    9506102: 143.0,   # BBC MARMARA
+    9506097: 143.0,   # BBC STEINWALL
+    9506126: 143.0,   # BBC CAMPANA
+    9451224: 130.0,   # GENERAL ROMEO
+    9454100: 132.0,   # BELUGA NOMINATION
+    9290050: 140.0,   # THORCO CLOUD
+    9397531: 140.0,   # THORCO ANGEL
+    1052191: 120.0,   # WILSON ECO VI
+}
+
+TYPE_DEFAULT_LENGTHS = {
+    'Container Ship': 350.0,
+    'Bulk Carrier': 280.0,
+    'Oil Tanker': 260.0,
+    'Oil/Chemical Tanker': 220.0,
+    'General Cargo Ship': 160.0
+}
+
+DEFAULT_INCOMING_VESSELS = [
+    {
+        "mmsi": 409321483,
+        "imo_number": 9321483,
+        "vessel_name": "EMMA MAERSK",
+        "vessel_type": "Container Ship",
+        "latitude": 6.6878,
+        "longitude": 79.6253,
+        "sog": 18.6,
+        "cog": 195.4,
+        "distance_to_port_nmi": 22.4,
+        "draft_m": 14.9,
+        "length_m": 397.0,
+        "wind_speed_knots": 24.5,
+        "wave_height_m": 2.8,
+    },
+    {
+        "mmsi": 408420804,
+        "imo_number": 8420804,
+        "vessel_name": "BERGE STAHL",
+        "vessel_type": "Bulk Carrier",
+        "latitude": 6.9784,
+        "longitude": 80.0077,
+        "sog": 17.5,
+        "cog": 177.8,
+        "distance_to_port_nmi": 14.8,
+        "draft_m": 12.8,
+        "length_m": 342.0,
+        "wind_speed_knots": 14.2,
+        "wave_height_m": 1.2,
+    },
+    {
+        "mmsi": 409690121,
+        "imo_number": 9690121,
+        "vessel_name": "VALIANT",
+        "vessel_type": "Bulk Carrier",
+        "latitude": 6.1179,
+        "longitude": 79.4989,
+        "sog": 9.8,
+        "cog": 305.1,
+        "distance_to_port_nmi": 58.2,
+        "draft_m": 13.5,
+        "length_m": 292.0,
+        "wind_speed_knots": 29.4,
+        "wave_height_m": 3.2,
+    },
+    {
+        "mmsi": 409839179,
+        "imo_number": 9839179,
+        "vessel_name": "CMA CGM JACQUES SAADE",
+        "vessel_type": "Container Ship",
+        "latitude": 6.8200,
+        "longitude": 79.7100,
+        "sog": 19.2,
+        "cog": 210.0,
+        "distance_to_port_nmi": 11.5,
+        "draft_m": 15.6,
+        "length_m": 400.0,
+        "wind_speed_knots": 18.0,
+        "wave_height_m": 1.8,
+    },
+    {
+        "mmsi": 409776171,
+        "imo_number": 9776171,
+        "vessel_name": "OOCL HONG KONG",
+        "vessel_type": "Container Ship",
+        "latitude": 7.2100,
+        "longitude": 79.5500,
+        "sog": 16.4,
+        "cog": 160.0,
+        "distance_to_port_nmi": 32.0,
+        "draft_m": 14.2,
+        "length_m": 399.9,
+        "wind_speed_knots": 11.0,
+        "wave_height_m": 0.9,
+    }
+]
+
+@app.get("/api/vessels")
+@app.get("/api/vessels/incoming")
+def list_incoming_vessels():
+    """
+    Returns the list of incoming vessels approaching Port of Colombo
+    from vessel telemetry and historical records in smart_port.db.
+    Includes IMO, name, type, draft, length, coordinates, and ETA metrics.
+    """
+    db_path = get_db_path()
+    if not db_path.exists():
+        return {
+            "status": "success",
+            "source": "fallback",
+            "total_vessels": len(DEFAULT_INCOMING_VESSELS),
+            "vessels": DEFAULT_INCOMING_VESSELS
+        }
+
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Query latest telemetry record per unique vessel IMO
+        cursor.execute("""
+            SELECT v1.*
+            FROM vessel_historical_data v1
+            INNER JOIN (
+                SELECT imo_number, MAX(id) as max_id
+                FROM vessel_historical_data
+                GROUP BY imo_number
+            ) v2 ON v1.id = v2.max_id
+            ORDER BY v1.vessel_name ASC
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            return {
+                "status": "success",
+                "source": "fallback",
+                "total_vessels": len(DEFAULT_INCOMING_VESSELS),
+                "vessels": DEFAULT_INCOMING_VESSELS
+            }
+
+        vessels = []
+        for r in rows:
+            row_dict = dict(r)
+            imo = row_dict.get("imo_number")
+            v_name = row_dict.get("vessel_name") or "Unknown Vessel"
+            v_type = row_dict.get("vessel_type") or "Container Ship"
+            length_m = VESSEL_SPECIFIC_LENGTHS.get(imo, TYPE_DEFAULT_LENGTHS.get(v_type, 280.0))
+            raw_draft = row_dict.get("draft_m")
+            draft_m = round(float(raw_draft), 1) if raw_draft is not None else 12.0
+
+            vessels.append({
+                "imo_number": imo,
+                "vessel_name": v_name,
+                "vessel_type": v_type,
+                "length_m": length_m,
+                "draft_m": draft_m,
+                "mmsi": row_dict.get("mmsi"),
+                "distance_to_port_nmi": round(float(row_dict.get("distance_to_port_nmi") or 0.0), 1),
+                "sog": round(float(row_dict.get("sog") or 0.0), 1),
+                "cog": round(float(row_dict.get("cog") or 0.0), 1),
+                "wind_speed_knots": round(float(row_dict.get("wind_speed_knots") or 0.0), 1),
+                "wave_height_m": round(float(row_dict.get("wave_height_m") or 0.0), 1),
+                "latitude": row_dict.get("latitude"),
+                "longitude": row_dict.get("longitude")
+            })
+
+        return {
+            "status": "success",
+            "source": "database",
+            "total_vessels": len(vessels),
+            "vessels": vessels
+        }
+    except Exception as e:
+        return {
+            "status": "partial_success",
+            "source": "fallback_on_error",
+            "error": str(e),
+            "total_vessels": len(DEFAULT_INCOMING_VESSELS),
+            "vessels": DEFAULT_INCOMING_VESSELS
+        }
 
 @app.get("/api/health")
 def health_check():
@@ -508,6 +716,8 @@ def book_berth_endpoint(payload: BookBerthRequest):
         }
     except ValueError as ve:
         err_msg = str(ve)
+        if "Validation Error: Vessel" in err_msg or "conflicting berth reservation" in err_msg:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err_msg)
         if "Double-booking conflict" in err_msg:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=err_msg)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err_msg)
@@ -559,5 +769,43 @@ def list_bookings_endpoint(
             },
             "bookings": bookings
         }
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+@app.delete("/api/berths/bookings/{booking_id}")
+@app.post("/api/berths/bookings/{booking_id}/release")
+def cancel_booking_endpoint(booking_id: int):
+    """
+    Releases an active booking record from berth_bookings,
+    setting its status to 'RELEASED' and returning the berth back to free/available.
+    """
+    try:
+        result = release_berth_booking(booking_id=booking_id)
+        return result
+    except ValueError as ve:
+        err_msg = str(ve)
+        if "not found" in err_msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=err_msg)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err_msg)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+@app.post("/api/berths/{berth_id}/release")
+def release_berth_endpoint(
+    berth_id: str,
+    booking_id: Optional[int] = Query(None, description="Optional booking ID to release")
+):
+    """
+    Releases the active booking on the specified berth ID,
+    updating the berth back to free/available.
+    """
+    try:
+        result = release_berth_booking(booking_id=booking_id, berth_id=berth_id)
+        return result
+    except ValueError as ve:
+        err_msg = str(ve)
+        if "not found" in err_msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=err_msg)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err_msg)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

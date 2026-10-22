@@ -165,7 +165,7 @@ export default function DynamicRescheduling({ onAuditAction }) {
   };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '400px 1fr', gap: '1.25rem' }}>
+    <div className="rescheduling-grid">
       {/* 1. Environmental Drift & Telemetry Variation Simulator */}
       <div className="panel-card" style={{ display: 'flex', flexDirection: 'column' }}>
         <div className="card-header">

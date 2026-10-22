@@ -78,11 +78,10 @@ export default function App() {
         position: 'sticky',
         top: 0,
         zIndex: 1000,
-        padding: '0.75rem 1.5rem'
+        padding: '0.75rem 2rem'
       }}>
         <div style={{
-          maxWidth: '1600px',
-          margin: '0 auto',
+          width: '100%',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center'
@@ -154,11 +153,10 @@ export default function App() {
       <nav style={{
         background: 'rgba(12, 20, 43, 0.7)',
         borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
-        padding: '0.5rem 1.5rem'
+        padding: '0.5rem 2rem'
       }}>
         <div style={{
-          maxWidth: '1600px',
-          margin: '0 auto',
+          width: '100%',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center'
@@ -222,7 +220,7 @@ export default function App() {
         {activeModule === 'overview' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
             {/* Quick Metrics Bar */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' }}>
+            <div className="metrics-grid">
               <div className="panel-card" style={{ padding: '1rem' }}>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>VTS Fleet Under Surveillance</div>
                 <div style={{ fontSize: '1.6rem', fontWeight: 700, color: '#f8fafc', marginTop: '2px' }}>
@@ -305,7 +303,7 @@ export default function App() {
       <footer style={{
         background: 'var(--bg-darkest)',
         borderTop: '1px solid var(--border-secondary)',
-        padding: '1.25rem 1.5rem',
+        padding: '1.25rem 2rem',
         marginTop: 'auto',
         fontSize: '0.75rem',
         color: 'var(--text-dim)',
@@ -313,7 +311,7 @@ export default function App() {
         justifyContent: 'space-between',
         alignItems: 'center'
       }}>
-        <div style={{ maxWidth: '1600px', margin: '0 auto', width: '100%', display: 'flex', justifyContent: 'space-between' }}>
+        <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <strong>Smart Port Autonomous Management System</strong> | Component 1: Intelligent Vessel ETA & Dynamic Berth Allocation
           </div>

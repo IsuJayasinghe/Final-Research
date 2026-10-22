@@ -148,6 +148,20 @@ export const getBookings = async (filters = {}) => {
   return res.data;
 };
 
+export const releaseBerth = async ({ berth_id, booking_id } = {}) => {
+  if (booking_id) {
+    const res = await apiClient.delete(`/berths/bookings/${booking_id}`);
+    return res.data;
+  }
+  const res = await apiClient.post(`/berths/${encodeURIComponent(berth_id)}/release`);
+  return res.data;
+};
+
+export const cancelBooking = async (bookingId) => {
+  const res = await apiClient.delete(`/berths/bookings/${bookingId}`);
+  return res.data;
+};
+
 // 3. Vessel ML Inference & Telemetry Endpoints
 export const predictVesselEta = async (telemetryPayload, autoTriggerReassignment = false) => {
   const res = await apiClient.post('/vessels/predict-eta', telemetryPayload, {
@@ -167,6 +181,19 @@ export const getSampleTelemetry = async () => {
     return res.data;
   } catch (e) {
     return FALLBACK_FLEET[0];
+  }
+};
+
+export const getIncomingVessels = async () => {
+  try {
+    const res = await apiClient.get('/vessels');
+    if (res.data?.vessels && res.data.vessels.length > 0) {
+      return res.data.vessels;
+    }
+    return FALLBACK_FLEET;
+  } catch (e) {
+    console.warn('Backend vessels endpoint failed, using fallback fleet:', e);
+    return FALLBACK_FLEET;
   }
 };
 

@@ -6,7 +6,9 @@ from app.berth_allocator import (
     book_berth,
     cancel_and_reassign_berth,
     get_all_bookings,
-    ensure_berth_bookings_table
+    ensure_berth_bookings_table,
+    check_vessel_time_window_conflict,
+    release_berth_booking
 )
 
 __all__ = [
@@ -14,5 +16,7 @@ __all__ = [
     "book_berth",
     "cancel_and_reassign_berth",
     "get_all_bookings",
-    "ensure_berth_bookings_table"
+    "ensure_berth_bookings_table",
+    "check_vessel_time_window_conflict",
+    "release_berth_booking"
 ]
