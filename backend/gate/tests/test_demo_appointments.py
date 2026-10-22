@@ -96,3 +96,45 @@ def test_each_appointment_gets_its_own_customs_risk_and_vessel(svc, docs_dir):
     assert seen["2_hazardous"][1] == "MV OCEAN PIONEER" and seen["2_hazardous"][2] is True
     assert seen["3_reefer"][1] == "MV PACIFIC STAR" and seen["3_reefer"][2] is True
     assert seen["1_clean"][3] < seen["2_hazardous"][3]  # clean standard export is the least risky
+
+
+# ---- every run makes new values, the story of each appointment stays the same --------------------------------
+
+def test_each_run_has_new_values_and_a_seed_repeats_a_run():
+    a, b = demo.random_scenarios(1), demo.random_scenarios(2)
+    assert demo.random_scenarios(1) == a  # the same seed gives exactly the same documents
+    assert {s.truck for s in a}.isdisjoint({s.truck for s in b})
+    assert {s.container for s in a}.isdisjoint({s.container for s in b})
+    assert all(x.booking_no != y.booking_no and x.seal != y.seal and x.licence != y.licence for x, y in zip(a, b))
+
+
+@pytest.mark.parametrize("seed", range(1, 25))
+def test_random_appointments_keep_their_story_and_have_valid_values(seed):
+    clean, hazardous, reefer = demo.random_scenarios(seed)
+    assert [s.container_type for s in (clean, hazardous, reefer)] == ["standard", "hazardous", "reefer"]
+    assert len({s.truck for s in (clean, hazardous, reefer)}) == 3 and len({s.hour for s in (clean, hazardous, reefer)}) == 3
+    levels = [documents.assess_customs_risk({"hs_code": s.hs, "declaration_no": "x"})["level"] for s in (clean, hazardous, reefer)]
+    assert levels == ["low", "medium", "high"]
+    import vessels
+
+    assert vessels.DEMO_SCHEDULE[clean.vessel] == 0 and vessels.DEMO_SCHEDULE[hazardous.vessel] >= 2 and vessels.DEMO_SCHEDULE[reefer.vessel] >= 2
+    assert hazardous.carrier == "Carrier-B"
+    assert [s.problems for s in (clean, hazardous, reefer)] == [[], demo.random_scenarios(0)[1].problems, demo.random_scenarios(0)[2].problems]
+    for s in (clean, hazardous, reefer):
+        assert documents.valid_container_number(s.container) and s.truck.startswith("TRK-") and len(s.seal) == 8
+        assert "customs risk" in " ".join(demo.expectations(s))
+
+
+@ocr_needed
+@pytest.mark.parametrize("seed", [4, 6])  # seeds that once produced a long goods name running into the weights table
+def test_random_documents_are_read_correctly(seed, tmp_path):
+    for s in demo.random_scenarios(seed):
+        demo.write_documents(s, tmp_path / s.key, DATE)
+        ctx = {"expected_container_id": s.container, "expected_truck_id": s.truck, "expected_date": DATE,
+               "container_type": s.container_type}
+        for slot in documents.required_documents(s.container_type):
+            for problem in [None] + [w for sl, w in s.problems if sl == slot]:
+                name = demo.SLOT_FILES[slot] + (f"__PROBLEM_{problem}" if problem else "")
+                path = tmp_path / s.key / f"{name}.png"
+                r = documents.check_document(path.read_bytes(), path.name, slot, ctx)
+                assert r["status"] == ("flagged" if problem else "cleared"), (seed, s.key, name, r["issues"])
