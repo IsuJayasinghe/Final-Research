@@ -167,7 +167,8 @@ sample of it was available.
 6. **Gate admin**: Gate Allocation, close the driver's gate for 3 hours ("crane breakdown"). Slot Optimization, inject a
    4 hour vessel delay and an 80% queue spike.
 7. **Driver**: My Trip shows the new gate, the longer wait and the reasons under Updates.
-8. **Gate admin**: Gate Desk, pick that gate, *Check in*, then *Complete gate process*. The driver sees it complete.
+8. **Gate admin**: Gate Desk, pick that gate and open *Show booking and documents* on the truck: the full booking and every
+   uploaded document (status, what was read, problems). Then *Check in*, then *Complete gate process*. The driver sees it complete.
 9. Model Results: the evidence for each model (see `ml-models/gate/reports/`).
 
 ## 6. Optional: PostgreSQL instead of memory
