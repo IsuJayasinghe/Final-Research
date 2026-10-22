@@ -101,6 +101,40 @@ def test_trucks_at_the_gate_are_not_moved_to_another_lane(svc):
     assert svc.repo.get(aid).lane == lane  # the officer is already processing it
 
 
+def test_the_desk_shows_the_uploaded_documents_and_what_is_missing(svc):
+    aid = book(svc, 1)
+    lane = svc.repo.get(aid).lane
+    docs = svc.gate_desk(lane, DATE, now=NOW)["bookings"][0]["document_summary"]
+    assert docs["total"] == 6 and docs["cleared"] == 0 and {d["status"] for d in docs["documents"]} == {"missing"}
+
+    svc._doc_results[aid] = {
+        "vgm": {
+            "status": "flagged", "filename": "vgm.png", "ocr_confidence": 0.87, "customs_assessment": None,
+            "issues": [{"level": "error", "code": "container_mismatch", "message": "Container number does not match the booking."}],
+            "fields": {"booking_no": "AAA111"},
+            "template": {"completeness": 0.75, "fields": [{"label": "Container number", "value": "MSKU1234565", "status": "ok", "required": True}]},
+        },
+        "booking_confirmation": {"status": "cleared", "filename": "b.png", "ocr_confidence": 0.9, "issues": [], "fields": {"booking_no": "AAA111", "vessel_name": "MV EVER GRACE"}, "template": None},
+        "cusdec": {"status": "cleared", "filename": "c.png", "ocr_confidence": 0.9, "issues": [], "fields": {}, "template": None},
+    }
+    docs = svc.gate_desk(lane, DATE, now=NOW)["bookings"][0]["document_summary"]
+    by_key = {d["doc_key"]: d for d in docs["documents"]}
+    assert docs["cleared"] == 2 and by_key["gate_pass"]["status"] == "missing"
+    assert by_key["vgm"]["status"] == "flagged" and by_key["vgm"]["filename"] == "vgm.png"
+    assert by_key["vgm"]["details"][0]["value"] == "MSKU1234565" and by_key["vgm"]["issues"][0]["level"] == "error"
+    assert by_key["booking_confirmation"]["status"] == "cleared"
+
+
+def test_the_desk_lists_documents_that_disagree_with_each_other(svc):
+    aid = book(svc, 1)
+    svc._doc_results[aid] = {
+        "booking_confirmation": {"status": "cleared", "issues": [], "fields": {"booking_no": "MLKBC2609187"}, "template": None},
+        "vgm": {"status": "cleared", "issues": [], "fields": {"booking_no": "MEDKSL2609187"}, "template": None},
+    }
+    b = svc.gate_desk(svc.repo.get(aid).lane, DATE, now=NOW)["bookings"][0]
+    assert [c["code"] for c in b["document_summary"]["cross_checks"]] == ["booking_no_differs"]
+
+
 def test_desk_rejects_an_unknown_gate_or_date(svc):
     with pytest.raises(BookingError):
         svc.gate_desk(9, DATE)
