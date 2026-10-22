@@ -88,29 +88,43 @@ The busiest hour shows on **Gate Status**.
 
 **b) Three different appointments for the OCR demo:**
 ```bash
-python tools/make_demo_appointments.py --book --approve
+python tools/make_demo_appointments.py                 # documents only: you book and approve live (see section 5)
+python tools/make_demo_appointments.py --book --approve   # also book the three and approve them
 ```
-This writes a separate set of made-up documents for each of three appointments, **drawn in the layout of the real
-forms** (grids, tables, a ticked check box, a numbered driving licence card; no real logos or photos), into
-`backend/gate/sample_documents/appointments/`, books the three through the running backend, and approves them so
-document upload is open. Without `--book` it only writes the files. Other options: `--date YYYY-MM-DD` (default
-tomorrow; the documents are dated for it), `--out DIR`, `--url http://127.0.0.1:8000`.
-This is the only document generator: every document is drawn in the real form layouts.
-Each folder also has a `README.txt` with its booking and what to expect.
+This is the only document generator. It writes a separate set of made-up documents for each of three appointments,
+**drawn in the layout of the real forms** (grids, tables, a ticked check box, a numbered driving licence card; no real
+logos or photos), into `backend/gate/sample_documents/appointments/`. Without `--book` it only writes the files.
+
+**Every run makes new values**: truck IDs, container numbers, booking and seal numbers, drivers, goods, shippers and
+vessels. At the end it prints a table of exactly what to type when you book (the same values are in each folder's
+`README.txt`), for example:
+```
+  folder       truck      container    carrier    type       cargo   hour
+  1_clean      TRK-47417  GESU9228151  Carrier-E  standard   export  11:00
+  2_hazardous  TRK-68873  HLCU1367529  Carrier-B  hazardous  import  10:00
+  3_reefer     TRK-57109  SEGU0981739  Carrier-G  reefer     export  14:00
+```
+Other options: `--date YYYY-MM-DD` (default tomorrow; the documents are dated for it, so book that date), `--out DIR`,
+`--url http://127.0.0.1:8000`, `--seed N` (the seed is printed on every run; use it to get exactly the same documents
+again, for example to rehearse), and `--fixed` (the original fixed set, shown in the table below).
+
+What stays the same on every run is each appointment's **story**, so the demo always works the same way:
 
 | | 1_clean | 2_hazardous | 3_reefer |
 |---|---|---|---|
-| Truck / container | `TRK-81001` / `MSCU5382042` | `TRK-81002` / `HLCU2745198` | `TRK-81003` / `OOLU6198420` |
-| Carrier, type, cargo | Carrier-A, standard, export | Carrier-B, hazardous, import | Carrier-C, reefer, export |
-| Booked hour | 08:00 | 10:00 | 13:00 |
-| Goods (customs) | Cotton T-shirts, HS 6109.10: **low** | Petroleum oils, HS 2710.19: **medium** | Wine, HS 2204.21: **high** |
-| Vessel (read by OCR) | MV EVER GRACE, on time | MV OCEAN PIONEER, **delayed 5 h** | MV PACIFIC STAR, **delayed 3 h** |
+| Cargo | ordinary goods (T-shirts, tea, tiles or gloves) | fuel or chemical (petroleum, methanol, sodium hydroxide or acetone) | alcohol (wine, whisky or beer) |
+| Customs risk read by OCR | **low** | **medium** | **high** |
+| Carrier | a reliable one | Carrier-B (the least reliable) | another carrier |
+| Vessel read by OCR | on time | **delayed** (3 or 5 h) | **delayed** (3 or 5 h) |
 | Documents needed | 6 | 7 (dangerous goods declaration) | 7 (reefer certificate) |
 | Faulty files to try first | none | `vgm__PROBLEM_wrong_container`, `gate_pass__PROBLEM_expired` | `seal_photo__PROBLEM_no_seal_number`, `driver_docs__PROBLEM_incomplete`, `gate_pass__PROBLEM_blurry` |
-| Result after fixing and submitting | no-show risk 8%, clearance 8 min | no-show risk 22%, clearance 31 min | no-show risk 11%, clearance 30 min |
+
+With `--fixed` the values are always: `TRK-81001` / `MSCU5382047` (Carrier-A, 08:00), `TRK-81002` / `HLCU2745198`
+(Carrier-B, 10:00) and `TRK-81003` / `OOLU6198420` (Carrier-C, 13:00), and after fixing and submitting the no-show risks
+and clearance times were about 8% / 8 min, 22% / 31 min and 11% / 30 min (they shift slightly with the date and weather).
 
 How to demo one appointment:
-1. In **Driver** mode open **My Trip** (or Upload Documents) and enter the truck ID, for example `TRK-81002`.
+1. In **Driver** mode open **My Trip** (or Upload Documents) and enter the truck ID printed for that appointment.
 2. Open **Upload Documents**. The approved appointment is selected.
 3. Upload each `__PROBLEM_` file into its slot (the file name starts with the slot). Each is flagged with the exact
    reason: a wrong container number, an expired permit, a missing seal number, missing licence details, or an
@@ -120,8 +134,8 @@ How to demo one appointment:
 6. Compare the three: customs risk (low, medium, high), the vessel delay, no-show risk and clearance time all differ
    because the documents differ. That is the proof that the models read the real document content.
 
-The numbers in the last table row come from one run and can change slightly with the date and the weather forecast.
-The three appointments are in `tests/test_demo_appointments.py`, so any change that breaks this demo fails the tests.
+The tests (`tests/test_demo_appointments.py`) generate 24 different random sets and read many of them with OCR, so a
+change that breaks this demo fails the tests.
 
 **c) Your own real documents.** The OCR reads the layouts of real photographed forms, not only the generated ones: a
 booking confirmation, a customs declaration (CUSDEC) with numbered boxes, a terminal gate pass with a grid and barcode,
@@ -143,9 +157,9 @@ sample of it was available.
 ## 5. A 10 minute walkthrough
 
 1. **Driver** mode: Gate Status, pick tomorrow, *Show busiest hour* (congested), then pick a quiet hour.
-2. Request Appointment with the hazardous appointment's values (`TRK-81002`, `HLCU2745198`, Carrier-B, hazardous,
-   import, tomorrow 10:00; see section 4b). The request shows "waiting for the gate admin".
-   (If you ran `make_demo_appointments.py --book --approve`, these three bookings already exist: skip to step 4.)
+2. Request Appointment with the hazardous appointment's values from the table the tool printed (truck, container,
+   Carrier-B, hazardous, import, tomorrow, its hour; see section 4b). The request shows "waiting for the gate admin".
+   (If you ran `make_demo_appointments.py --book --approve`, these bookings already exist: skip to step 4.)
 3. Upload Documents is locked. Switch to **Gate admin**, open Approvals and approve the request.
 4. Back to **Driver**: My Trip shows the approval. Upload `vgm__PROBLEM_wrong_container.png` first to show a document
    being flagged, then the 7 good documents from `sample_documents/appointments/2_hazardous/`, and submit.
