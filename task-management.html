@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Management | Smart Port</title>
+    <link rel="stylesheet" href="styles.css">
+
+    <style>
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .filters {
+            display: flex;
+            gap: 10px;
+        }
+
+        .filter-btn {
+            border: 1px solid #ccd5db;
+            background: white;
+            color: #425b6c;
+            border-radius: 5px;
+            padding: 8px 14px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+
+        .filter-btn.active-filter {
+            background: #174b70;
+            color: white;
+            border-color: #174b70;
+        }
+
+        .priority-high {
+            color: #d64a4a;
+            font-weight: bold;
+        }
+
+        .priority-normal {
+            color: #526a79;
+        }
+
+        .action-btn {
+            border: 1px solid #174b70;
+            background: white;
+            color: #174b70;
+            border-radius: 4px;
+            padding: 6px 9px;
+            cursor: pointer;
+            font-size: 10px;
+        }
+
+        .action-btn:hover {
+            background: #174b70;
+            color: white;
+        }
+
+        .summary-bar {
+            margin-top: 25px;
+            padding: 15px;
+            background: #f5f8fa;
+            border-radius: 6px;
+            font-size: 11px;
+            color: #526a79;
+        }
+    </style>
+</head>
+
+<body>
+
+<header class="header">
+    <div class="logo">
+        <div class="logo-icon">⚓</div>
+        <div>
+            <div class="logo-title">SMART PORT</div>
+            <div class="logo-subtitle">AI MANAGEMENT SYSTEM</div>
+        </div>
+    </div>
+
+    <nav class="nav">
+        <a href="dashboard.html">Home</a>
+        <a href="task-assignment.html">Solutions⌄</a>
+        <a href="live-tracking.html">Live Tracking</a>
+        <a href="task-management.html" class="active">Tasks</a>
+        <a href="analytics.html">Analytics</a>
+    </nav>
+
+    <input class="search-box" type="text" placeholder="⌕  Search">
+
+    <div class="header-actions">
+        <div class="notification">
+            ♧
+            <span class="badge">3</span>
+        </div>
+        <div class="profile">♙</div>
+    </div>
+</header>
+
+<main>
+<div class="page-container">
+
+    <h1 class="page-title">Task Management</h1>
+
+    <p class="page-description">
+        Monitor transportation tasks, priorities, assigned trucks and
+        completion status.
+    </p>
+
+    <div class="stats-grid">
+
+        <div class="stat-card">
+            <div class="stat-label">Total Tasks Today</div>
+            <div class="stat-value">64</div>
+            <div class="stat-note">Current operational period</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-label">In Progress</div>
+            <div class="stat-value">18</div>
+            <div class="stat-note green">Currently being executed</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-label">Pending</div>
+            <div class="stat-value">8</div>
+            <div class="stat-note orange">Awaiting assignment</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-label">Completed</div>
+            <div class="stat-value">38</div>
+            <div class="stat-note green">Completed today</div>
+        </div>
+
+    </div>
+
+    <div class="panel">
+
+        <div class="toolbar">
+
+            <div class="filters">
+                <button class="filter-btn active-filter"
+                        onclick="filterTasks('all', this)">
+                    All Tasks
+                </button>
+
+                <button class="filter-btn"
+                        onclick="filterTasks('pending', this)">
+                    Pending
+                </button>
+
+                <button class="filter-btn"
+                        onclick="filterTasks('active', this)">
+                    In Progress
+                </button>
+
+                <button class="filter-btn"
+                        onclick="filterTasks('completed', this)">
+                    Completed
+                </button>
+            </div>
+
+            <a href="task-assignment.html">
+                <button class="btn" style="margin-top:0;">
+                    + New Task
+                </button>
+            </a>
+
+        </div>
+
+        <table id="taskTable">
+            <thead>
+            <tr>
+                <th>Task ID</th>
+                <th>Container</th>
+                <th>Pickup</th>
+                <th>Destination</th>
+                <th>Truck</th>
+                <th>Priority</th>
+                <th>Status</th>
+                <th>Action</th>
+            </tr>
+            </thead>
+
+            <tbody>
+
+            <tr data-status="active">
+                <td>TSK-1042</td>
+                <td>MAEU3483419</td>
+                <td>Berth 03</td>
+                <td>Yard B-12</td>
+                <td>TRK-80579</td>
+                <td class="priority-high">High</td>
+                <td>
+                    <span class="status active">In Progress</span>
+                </td>
+                <td>
+                    <button class="action-btn">View</button>
+                </td>
+            </tr>
+
+            <tr data-status="active">
+                <td>TSK-1043</td>
+                <td>MSCU7281954</td>
+                <td>Yard A-08</td>
+                <td>Berth 05</td>
+                <td>TRK-80584</td>
+                <td class="priority-normal">Normal</td>
+                <td>
+                    <span class="status active">In Progress</span>
+                </td>
+                <td>
+                    <button class="action-btn">View</button>
+                </td>
+            </tr>
+
+            <tr data-status="pending">
+                <td>TSK-1044</td>
+                <td>CMAU5812098</td>
+                <td>Berth 02</td>
+                <td>Yard C-04</td>
+                <td>Not Assigned</td>
+                <td class="priority-high">High</td>
+                <td>
+                    <span class="status pending">Pending</span>
+                </td>
+                <td>
+                    <button class="action-btn"
+                            onclick="location.href='task-assignment.html'">
+                        Assign
+                    </button>
+                </td>
+            </tr>
+
+            <tr data-status="pending">
+                <td>TSK-1045</td>
+                <td>OOLU9341852</td>
+                <td>Yard B-07</td>
+                <td>Berth 04</td>
+                <td>Not Assigned</td>
+                <td class="priority-normal">Normal</td>
+                <td>
+                    <span class="status pending">Pending</span>
+                </td>
+                <td>
+                    <button class="action-btn"
+                            onclick="location.href='task-assignment.html'">
+                        Assign
+                    </button>
+                </td>
+            </tr>
+
+            <tr data-status="completed">
+                <td>TSK-1041</td>
+                <td>HLXU6293817</td>
+                <td>Yard D-02</td>
+                <td>Berth 01</td>
+                <td>TRK-80571</td>
+                <td class="priority-normal">Normal</td>
+                <td>
+                    <span class="status completed">Completed</span>
+                </td>
+                <td>
+                    <button class="action-btn">Details</button>
+                </td>
+            </tr>
+
+            </tbody>
+        </table>
+
+        <div class="summary-bar">
+            Showing transportation tasks for the current operational period.
+            Task information is updated when drivers report progress or
+            operational conditions change.
+        </div>
+
+    </div>
+
+</div>
+</main>
+
+<footer class="footer">
+
+    <div>
+        Smart Port Management System © 2026 All rights reserved.
+    </div>
+
+    <div class="footer-links">
+        <a href="#">Privacy Policy</a> |
+        <a href="#">Terms of Use</a> |
+        <a href="#">Accessibility</a>
+    </div>
+
+    <div class="system-status">
+        <span class="status-dot"></span>
+        System Status: Operational
+    </div>
+
+</footer>
+
+<script>
+function filterTasks(status, button) {
+
+    const rows =
+        document.querySelectorAll("#taskTable tbody tr");
+
+    rows.forEach(row => {
+        if (status === "all" ||
+            row.dataset.status === status) {
+            row.style.display = "";
+        } else {
+            row.style.display = "none";
+        }
+    });
+
+    document.querySelectorAll(".filter-btn")
+        .forEach(btn =>
+            btn.classList.remove("active-filter")
+        );
+
+    button.classList.add("active-filter");
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Operations Dashboard | Smart Port</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+<header class="header">
+    <a href="dashboard.html" class="logo">
+        <div class="logo-icon">⚓</div>
+        <div>
+            <div class="logo-title">SMART PORT</div>
+            <div class="logo-subtitle">AI MANAGEMENT SYSTEM</div>
+        </div>
+    </a>
+
+    <nav class="nav">
+        <a href="dashboard.html" class="active">Home</a>
+        <a href="task-assignment.html">Solutions⌄</a>
+        <a href="live-tracking.html">Live Tracking</a>
+        <a href="task-management.html">Tasks</a>
+        <a href="analytics.html">Analytics</a>
+    </nav>
+
+    <input class="search-box" type="text" placeholder="⌕  Search">
+
+    <div class="header-actions">
+        <div class="notification" title="Alerts">
+            ♧
+            <span class="badge">3</span>
+        </div>
+        <div class="profile" title="Operator Profile">♙</div>
+    </div>
+</header>
+
+<main>
+    <div class="page-container">
+
+        <h1 class="page-title">Operations Dashboard</h1>
+        <p class="page-description">
+            Monitor truck activity, transportation tasks and current
+            operational conditions in real time.
+        </p>
+
+        <section class="stats-grid">
+
+            <div class="stat-card">
+                <div class="stat-label">Active Trucks</div>
+                <div class="stat-value">24</div>
+                <div class="stat-note green">18 currently assigned</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-label">Available Trucks</div>
+                <div class="stat-value">6</div>
+                <div class="stat-note">Ready for assignment</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-label">Pending Tasks</div>
+                <div class="stat-value">8</div>
+                <div class="stat-note orange">2 high-priority tasks</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-label">Average Utilization</div>
+                <div class="stat-value">82%</div>
+                <div class="stat-note green">Current operational period</div>
+            </div>
+
+        </section>
+
+        <section class="dashboard-grid">
+
+            <div class="panel">
+                <h2 class="panel-title">Current Transportation Tasks</h2>
+
+                <table>
+                    <thead>
+                    <tr>
+                        <th>Task ID</th>
+                        <th>Truck</th>
+                        <th>Pickup</th>
+                        <th>Destination</th>
+                        <th>Priority</th>
+                        <th>Status</th>
+                    </tr>
+                    </thead>
+
+                    <tbody>
+
+                    <tr>
+                        <td>TSK-1042</td>
+                        <td>TRK-80579</td>
+                        <td>Berth 03</td>
+                        <td>Yard B-12</td>
+                        <td>High</td>
+                        <td>
+                            <span class="status active">In Progress</span>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td>TSK-1043</td>
+                        <td>TRK-80584</td>
+                        <td>Yard A-08</td>
+                        <td>Berth 05</td>
+                        <td>Normal</td>
+                        <td>
+                            <span class="status active">In Progress</span>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td>TSK-1044</td>
+                        <td>—</td>
+                        <td>Berth 02</td>
+                        <td>Yard C-04</td>
+                        <td>High</td>
+                        <td>
+                            <span class="status pending">Pending</span>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td>TSK-1041</td>
+                        <td>TRK-80571</td>
+                        <td>Yard D-02</td>
+                        <td>Berth 01</td>
+                        <td>Normal</td>
+                        <td>
+                            <span class="status completed">Completed</span>
+                        </td>
+                    </tr>
+
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="panel">
+
+                <h2 class="panel-title">Operational Alerts</h2>
+
+                <div class="alert-item">
+                    <div class="alert-title red">High Congestion</div>
+                    <div class="alert-text">
+                        Route B2 → Yard C currently experiencing increased delay.
+                    </div>
+                </div>
+
+                <div class="alert-item">
+                    <div class="alert-title orange">Priority Task</div>
+                    <div class="alert-text">
+                        TSK-1044 requires truck assignment.
+                    </div>
+                </div>
+
+                <div class="alert-item">
+                    <div class="alert-title">Truck Status Update</div>
+                    <div class="alert-text">
+                        TRK-80571 completed its assigned transportation task.
+                    </div>
+                </div>
+
+                <div class="alert-item">
+                    <div class="alert-title green">System Update</div>
+                    <div class="alert-text">
+                        Current truck locations successfully synchronized.
+                    </div>
+                </div>
+
+            </div>
+
+        </section>
+
+    </div>
+</main>
+
+<footer class="footer">
+
+    <div>
+        Smart Port Management System © 2026 All rights reserved.
+    </div>
+
+    <div class="footer-links">
+        <a href="#">Privacy Policy</a> |
+        <a href="#">Terms of Use</a> |
+        <a href="#">Accessibility</a>
+    </div>
+
+    <div class="system-status">
+        <span class="status-dot"></span>
+        System Status: Operational
+    </div>
+
+</footer>
+
+</body>
+</html>

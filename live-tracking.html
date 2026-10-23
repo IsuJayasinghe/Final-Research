@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Truck Monitoring | Smart Port</title>
+    <link rel="stylesheet" href="styles.css">
+
+    <style>
+        .tracking-layout {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 22px;
+        }
+
+        .map-area {
+            height: 420px;
+            background: #f2f6f8;
+            border: 1px solid #d8dfe5;
+            border-radius: 8px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .road {
+            position: absolute;
+            background: #d5dce1;
+        }
+
+        .road.horizontal {
+            height: 30px;
+            width: 100%;
+            top: 190px;
+        }
+
+        .road.vertical {
+            width: 30px;
+            height: 100%;
+            left: 48%;
+        }
+
+        .location-label {
+            position: absolute;
+            background: #173f5f;
+            color: white;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 10px;
+        }
+
+        .truck-marker {
+            position: absolute;
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            background: white;
+            border: 3px solid #174b70;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 17px;
+            box-shadow: 0 2px 6px rgba(0,0,0,.15);
+            cursor: pointer;
+        }
+
+        .truck-marker.available {
+            border-color: #18a567;
+        }
+
+        .truck-marker.warning {
+            border-color: #e49a25;
+        }
+
+        .truck-list-item {
+            padding: 14px 0;
+            border-bottom: 1px solid #edf0f2;
+        }
+
+        .truck-list-top {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+
+        .truck-id {
+            font-size: 13px;
+            font-weight: bold;
+        }
+
+        .truck-info {
+            font-size: 11px;
+            color: #647786;
+            line-height: 1.7;
+        }
+
+        .map-legend {
+            position: absolute;
+            bottom: 12px;
+            left: 12px;
+            background: white;
+            border: 1px solid #d8dfe5;
+            border-radius: 5px;
+            padding: 9px 12px;
+            font-size: 10px;
+        }
+
+        @media(max-width:900px) {
+            .tracking-layout {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<header class="header">
+    <div class="logo">
+        <div class="logo-icon">⚓</div>
+        <div>
+            <div class="logo-title">SMART PORT</div>
+            <div class="logo-subtitle">AI MANAGEMENT SYSTEM</div>
+        </div>
+    </div>
+
+    <nav class="nav">
+        <a href="dashboard.html">Home</a>
+        <a href="task-assignment.html">Solutions⌄</a>
+        <a href="live-tracking.html" class="active">Live Tracking</a>
+        <a href="task-management.html">Tasks</a>
+        <a href="analytics.html">Analytics</a>
+    </nav>
+
+    <input class="search-box" type="text" placeholder="⌕  Search">
+
+    <div class="header-actions">
+        <div class="notification">
+            ♧
+            <span class="badge">3</span>
+        </div>
+        <div class="profile">♙</div>
+    </div>
+</header>
+
+<main>
+<div class="page-container">
+
+    <h1 class="page-title">Live Truck Monitoring</h1>
+    <p class="page-description">
+        View current truck locations, assignments and operational status across
+        the terminal.
+    </p>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-label">Tracked Trucks</div>
+            <div class="stat-value">24</div>
+            <div class="stat-note green">All GPS services online</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-label">In Transit</div>
+            <div class="stat-value">14</div>
+            <div class="stat-note">Active transportation tasks</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-label">Available</div>
+            <div class="stat-value">6</div>
+            <div class="stat-note green">Ready for assignment</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-label">Delayed</div>
+            <div class="stat-value">4</div>
+            <div class="stat-note orange">Requires monitoring</div>
+        </div>
+    </div>
+
+    <div class="tracking-layout">
+
+        <div class="panel">
+            <h2 class="panel-title">Terminal Live Map</h2>
+
+            <div class="map-area">
+
+                <div class="road horizontal"></div>
+                <div class="road vertical"></div>
+
+                <div class="location-label"
+                     style="left:20px; top:30px;">
+                    Berth Area
+                </div>
+
+                <div class="location-label"
+                     style="right:20px; top:30px;">
+                    Yard A
+                </div>
+
+                <div class="location-label"
+                     style="right:20px; bottom:30px;">
+                    Yard B
+                </div>
+
+                <div class="location-label"
+                     style="left:20px; bottom:30px;">
+                    Transfer Zone
+                </div>
+
+                <div class="truck-marker"
+                     style="left:25%; top:42%;"
+                     title="TRK-80579">
+                    🚚
+                </div>
+
+                <div class="truck-marker available"
+                     style="left:51%; top:20%;"
+                     title="TRK-80586">
+                    🚚
+                </div>
+
+                <div class="truck-marker"
+                     style="left:68%; top:46%;"
+                     title="TRK-80584">
+                    🚚
+                </div>
+
+                <div class="truck-marker warning"
+                     style="left:45%; top:70%;"
+                     title="TRK-80591">
+                    🚚
+                </div>
+
+                <div class="map-legend">
+                    <span class="green">● Available</span>
+                    &nbsp;&nbsp;
+                    <span style="color:#174b70;">● In Transit</span>
+                    &nbsp;&nbsp;
+                    <span class="orange">● Delayed</span>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2 class="panel-title">Truck Status</h2>
+
+            <div class="truck-list-item">
+                <div class="truck-list-top">
+                    <span class="truck-id">TRK-80579</span>
+                    <span class="status active">In Transit</span>
+                </div>
+                <div class="truck-info">
+                    Task: TSK-1042<br>
+                    Destination: Yard B-12<br>
+                    ETA: 5 min
+                </div>
+            </div>
+
+            <div class="truck-list-item">
+                <div class="truck-list-top">
+                    <span class="truck-id">TRK-80586</span>
+                    <span class="status completed">Available</span>
+                </div>
+                <div class="truck-info">
+                    Current Area: Berth 03<br>
+                    Current Task: None<br>
+                    Ready for assignment
+                </div>
+            </div>
+
+            <div class="truck-list-item">
+                <div class="truck-list-top">
+                    <span class="truck-id">TRK-80584</span>
+                    <span class="status active">In Transit</span>
+                </div>
+                <div class="truck-info">
+                    Task: TSK-1043<br>
+                    Destination: Berth 05<br>
+                    ETA: 8 min
+                </div>
+            </div>
+
+            <div class="truck-list-item">
+                <div class="truck-list-top">
+                    <span class="truck-id">TRK-80591</span>
+                    <span class="status pending">Delayed</span>
+                </div>
+                <div class="truck-info">
+                    Task: TSK-1039<br>
+                    Current Area: Road B2<br>
+                    Congestion detected
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+</div>
+</main>
+
+<footer class="footer">
+    <div>Smart Port Management System © 2026 All rights reserved.</div>
+
+    <div class="footer-links">
+        <a href="#">Privacy Policy</a> |
+        <a href="#">Terms of Use</a> |
+        <a href="#">Accessibility</a>
+    </div>
+
+    <div class="system-status">
+        <span class="status-dot"></span>
+        System Status: Operational
+    </div>
+</footer>
+
+</body>
+</html>

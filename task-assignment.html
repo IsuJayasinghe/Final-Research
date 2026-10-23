@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Assignment | Smart Port</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+<header class="header">
+
+    <a href="dashboard.html" class="logo">
+        <div class="logo-icon">⚓</div>
+
+        <div>
+            <div class="logo-title">SMART PORT</div>
+            <div class="logo-subtitle">AI MANAGEMENT SYSTEM</div>
+        </div>
+    </a>
+
+    <nav class="nav">
+        <a href="dashboard.html">Home</a>
+        <a href="task-assignment.html" class="active">Solutions⌄</a>
+        <a href="live-tracking.html">Live Tracking</a>
+        <a href="task-management.html">Tasks</a>
+        <a href="analytics.html">Analytics</a>
+    </nav>
+
+    <input class="search-box" type="text" placeholder="⌕  Search">
+
+    <div class="header-actions">
+        <div class="notification" title="Alerts">
+            ♧
+            <span class="badge">3</span>
+        </div>
+
+        <div class="profile" title="Operator Profile">♙</div>
+    </div>
+
+</header>
+
+<main>
+
+    <div class="page-container">
+
+        <h1 class="page-title">Task Assignment & Routing</h1>
+
+        <p class="page-description">
+            Assign transportation tasks and generate route recommendations
+            according to current truck and operational conditions.
+        </p>
+
+        <div class="form-card">
+
+            <div class="form-grid">
+
+                <div class="form-group">
+                    <label for="taskId">Task ID</label>
+                    <input id="taskId" type="text" value="TSK-1045">
+                </div>
+
+                <div class="form-group">
+                    <label for="containerId">Container ID</label>
+                    <input id="containerId"
+                           type="text"
+                           value="MSKU-982143-0"
+                           placeholder="Enter container ID">
+                </div>
+
+                <div class="form-group">
+                    <label for="pickup">Pickup Location</label>
+
+                    <select id="pickup">
+                        <option>Berth 01</option>
+                        <option>Berth 02</option>
+                        <option selected>Berth 03</option>
+                        <option>Berth 04</option>
+                        <option>Yard A</option>
+                        <option>Yard B</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="destination">Destination</label>
+
+                    <select id="destination">
+                        <option>Yard A-08</option>
+                        <option selected>Yard B-12</option>
+                        <option>Yard C-04</option>
+                        <option>Yard D-02</option>
+                        <option>Berth 01</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="priority">Task Priority</label>
+
+                    <select id="priority">
+                        <option>Low</option>
+                        <option selected>Normal</option>
+                        <option>High</option>
+                        <option>Urgent</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="truck">Recommended Truck</label>
+
+                    <select id="truck">
+                        <option selected>
+                            TRK-80586 — Available — 0.8 km away
+                        </option>
+                        <option>
+                            TRK-80591 — Available — 1.2 km away
+                        </option>
+                        <option>
+                            TRK-80594 — Available — 1.7 km away
+                        </option>
+                    </select>
+                </div>
+
+            </div>
+
+            <div class="route-preview">
+
+                <h4>Recommended Route</h4>
+
+                <div class="route-details">
+
+                    <div>
+                        <strong>Route</strong>
+                        Berth 03 → Road B2 → Yard B-12
+                    </div>
+
+                    <div>
+                        <strong>Distance</strong>
+                        2.4 km
+                    </div>
+
+                    <div>
+                        <strong>Estimated Time</strong>
+                        7 min
+                    </div>
+
+                    <div>
+                        <strong>Congestion</strong>
+                        <span class="green">Low</span>
+                    </div>
+
+                </div>
+
+            </div>
+
+            <button class="btn"
+                    type="button"
+                    onclick="assignTask()">
+                Assign Task
+            </button>
+
+        </div>
+
+    </div>
+
+</main>
+
+<footer class="footer">
+
+    <div>
+        Smart Port Management System © 2026 All rights reserved.
+    </div>
+
+    <div class="footer-links">
+        <a href="#">Privacy Policy</a> |
+        <a href="#">Terms of Use</a> |
+        <a href="#">Accessibility</a>
+    </div>
+
+    <div class="system-status">
+        <span class="status-dot"></span>
+        System Status: Operational
+    </div>
+
+</footer>
+
+<script>
+function assignTask() {
+    const taskId = document.getElementById("taskId").value;
+    const truck = document.getElementById("truck").value;
+
+    alert(
+        "Task " + taskId +
+        " has been assigned successfully.\n\nTruck: " + truck
+    );
+}
+</script>
+
+</body>
+</html>

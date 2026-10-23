@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Operations Support & Contact | Smart Port</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+<header class="header">
+    <a href="dashboard.html" class="logo">
+        <div class="logo-icon">⚓</div>
+        <div>
+            <div class="logo-title">SMART PORT</div>
+            <div class="logo-subtitle">AI MANAGEMENT SYSTEM</div>
+        </div>
+    </a>
+
+    <nav class="nav">
+        <a href="dashboard.html">Home</a>
+        <a href="task-assignment.html">Solutions⌄</a>
+        <a href="features.html">Features</a>
+        <a href="contact.html" class="active">Contact</a>
+        <a href="about.html">About</a>
+    </nav>
+
+    <input class="search-box" type="text" placeholder="⌕  Search">
+
+    <div class="header-actions">
+        <div class="notification" title="Alerts">
+            ♧
+            <span class="badge">3</span>
+        </div>
+        <div class="profile" title="Operator Profile">♙</div>
+    </div>
+</header>
+
+<main>
+    <div class="page-container">
+
+        <h1 class="page-title">Terminal Control & Operations Support</h1>
+        <p class="page-description">
+            Connect directly with port terminal dispatchers, the harbor master office,
+            safety emergency units, and AI systems engineering.
+        </p>
+
+        <section class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Emergency Channel</div>
+                <div class="stat-value">VHF Ch 16</div>
+                <div class="stat-note red">24/7 Port safety frequency</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-label">Control Desk Hotline</div>
+                <div class="stat-value">+1 (800) 555-PORT</div>
+                <div class="stat-note green">Direct terminal dispatch line</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-label">Avg Response Time</div>
+                <div class="stat-value">2.4 min</div>
+                <div class="stat-note green">Rapid incident resolution</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-label">Dispatchers on Duty</div>
+                <div class="stat-value">8 Active</div>
+                <div class="stat-note">Terminal command center</div>
+            </div>
+        </section>
+
+        <section class="dashboard-grid">
+
+            <div class="panel">
+                <h2 class="panel-title">Submit Operations Ticket / Incident Report</h2>
+
+                <form onsubmit="event.preventDefault(); submitInquiry();">
+                    <div class="form-grid">
+
+                        <div class="form-group">
+                            <label for="operatorName">Officer / Operator Name</label>
+                            <input id="operatorName" type="text" value="J. Martinez (Dispatcher #402)" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="station">Station / Call Sign</label>
+                            <input id="station" type="text" value="Tower Control - Station 04" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="department">Department</label>
+                            <select id="department">
+                                <option>Internal Haulage & Fleet</option>
+                                <option selected>Berth & Quay Crane Operations</option>
+                                <option>Yard Container Stacking</option>
+                                <option>Gate Security & Inspection</option>
+                                <option>AI Dispatch Software Support</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="urgency">Urgency Level</label>
+                            <select id="urgency">
+                                <option>Standard Inquiry</option>
+                                <option selected>Priority Operational Issue</option>
+                                <option>Critical Terminal Stoppage</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group full">
+                            <label for="subject">Issue Summary</label>
+                            <input id="subject" type="text" value="Quay Crane 03 handover delay for Berth 03 incoming hauler convoy" required>
+                        </div>
+
+                        <div class="form-group full">
+                            <label for="message">Detailed Report / Notes</label>
+                            <textarea id="message" rows="3">TRK-80579 and TRK-80584 experienced a minor corridor congestion alert near Road B2. Requesting temporary route priority override for twin-lift unload.</textarea>
+                        </div>
+
+                    </div>
+
+                    <button class="btn" type="submit">
+                        Transmit Operations Dispatch
+                    </button>
+                </form>
+            </div>
+
+            <div class="panel">
+                <h2 class="panel-title">Duty Command Directory</h2>
+
+                <div class="alert-item">
+                    <div class="alert-title green">Harbor Master & Berth Control</div>
+                    <div class="alert-text">
+                        <strong>Location:</strong> Marine Tower (VHF 12)<br>
+                        <strong>Contact:</strong> Ext. 101
+                    </div>
+                </div>
+
+                <div class="alert-item">
+                    <div class="alert-title">Yard Superintendent</div>
+                    <div class="alert-text">
+                        <strong>Location:</strong> Blocks A–D Logistics<br>
+                        <strong>Contact:</strong> Ext. 204
+                    </div>
+                </div>
+
+                <div class="alert-item">
+                    <div class="alert-title red">Port Safety & Hazmat Response</div>
+                    <div class="alert-text">
+                        <strong>Location:</strong> Fire Station 02<br>
+                        <strong>Contact:</strong> Ext. 911 / VHF 16
+                    </div>
+                </div>
+
+                <div class="alert-item">
+                    <div class="alert-title orange">AI System & IT Infrastructure</div>
+                    <div class="alert-text">
+                        <strong>Location:</strong> Server Room B<br>
+                        <strong>Contact:</strong> Ext. 509
+                    </div>
+                </div>
+
+                <div class="alert-item" style="border-top: 1px solid #edf0f2; margin-top: 12px; padding-top: 16px;">
+                    <div class="alert-title green">Automated Radio Dispatch</div>
+                    <div class="alert-text">
+                        Digital trunked radio repeater systems operating with 99.9% uptime across all terminal zones.
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+    </div>
+</main>
+
+<footer class="footer">
+    <div>
+        Smart Port Management System © 2026 All rights reserved.
+    </div>
+
+    <div class="footer-links">
+        <a href="#">Privacy Policy</a> |
+        <a href="#">Terms of Use</a> |
+        <a href="#">Accessibility</a>
+    </div>
+
+    <div class="system-status">
+        <span class="status-dot"></span>
+        System Status: Operational
+    </div>
+</footer>
+
+<script>
+function submitInquiry() {
+    const name = document.getElementById("operatorName").value;
+    const dept = document.getElementById("department").value;
+    alert("Dispatch notification sent by " + name + " for " + dept + ".\nCommand center notified.");
+}
+</script>
+
+</body>
+</html>
