@@ -1,9 +1,7 @@
 # AI-Powered Autonomous Smart Port Management System
-## Central Git Repository Master Documentation (Checklist 1 Submission)
+
 
 **Project ID**: `J26-IT-396`  
-**Academic Year**: 2026/2027 (July Batch)  
-**Course Code**: IT4010 — Comprehensive Design and Analysis Project (CDAP)  
 **Specialization**: B.Sc. (Hons) in Information Technology  
 **Supervisor**: Dr. Junius Anjana  
 **Co-Supervisor**: Mr. Nelum Amarasena  
@@ -18,7 +16,7 @@
 | **Siriwardena D.R.S** | `IT22143440` | Information Technology | **Component 1**: Smart Dynamic Berth Allocation System | `feature/c1-berth` |
 | **Ranathunga R.A.N.G** | `IT23293144` | Information Technology | **Component 2**: Intelligent Drayage Truck Optimization System | `feature/c2-drayage` |
 | **Jayasinghe I.U** | `IT23334410` | Information Technology | **Component 3**: Smart Container Yard Allocation & Space Utilization System | `feature/c3-yard` |
-| **Nanayakkara** | `IT23234116` | Information Technology | **Component 4**: AI-Powered Gate Appointment System | `feature/c4-gate` |
+| **Nanayakkara K.D.T.L** | `IT23234116` | Information Technology | **Component 4**: AI-Powered Gate Appointment System | `feature/c4-gate` |
 
 ---
 
