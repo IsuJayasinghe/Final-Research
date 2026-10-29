@@ -39,7 +39,7 @@ wrong place.
    36 hours after the new one**, so the new container does not block it.
 3. Use other general zones only if the recommended zone is full.
 
-The 36-hour margin was chosen on a validation period (0 **less than a hour**, 12, 24 and 36 hours were tested).
+The 36-hour margin was chosen on a validation period (0, 12, 24 and 36 hours were tested).
 
 ## Models and results
 Trained and tested on a real container terminal event log (~95,000 containers, Jul–Sep 2021),
