@@ -6,6 +6,7 @@
 **Course Code**: IT4010 — Comprehensive Design and Analysis Project (CDAP)  
 **Specialization**: B.Sc. (Hons) in Information Technology  
 **Supervisor**: Dr. Junius Anjana  
+**Co-Supervisor**: Mr. Nelum Amarasena  
 **Official GitHub Repository**: [https://github.com/IsuJayasinghe/Final-Research](https://github.com/IsuJayasinghe/Final-Research)  
 
 ---

@@ -1,14 +1,13 @@
 # Component 2: Intelligent Drayage Truck Optimization System
 ## Individual Component Technical Documentation (Checklist 1 Submission)
 
-**Project ID**: `J26-IT-396`  
-**Academic Year**: 2026/2027 (July Batch)  
-**Course Code**: IT4010 — Comprehensive Design and Analysis Project (CDAP)  
+**Project ID**: `J26-IT-396`   
 **Specialization**: B.Sc. (Hons) in Information Technology  
 **Student Name**: Ranathunga R.A.N.G  
 **Student ID**: `IT23293144`  
-**Research Component**: Component 2 — Intelligent Drayage Truck Optimization System  
+**Research Component**: Component 2 - Intelligent Drayage Truck Optimization System  
 **Supervisor**: Dr. Junius Anjana  
+**Co-Supervisor**: Mr. Nelum Amarasena  
 **Dedicated Git Branch**: `feature/c2-drayage` (merged & synchronized with `develop`)  
 **Official GitHub Repository**: [https://github.com/IsuJayasinghe/Final-Research](https://github.com/IsuJayasinghe/Final-Research)  
 
@@ -190,5 +189,3 @@ flutter run lib/main.dart
   - `bd6355f`: *feat(mobile): Implement Flutter driver mobile app, telemetry, and integration tests*
 
 ---
-
-*Prepared by Ranathunga R.A.N.G (IT23293144) for SLIIT CDAP Checklist 1 Evaluation.*
